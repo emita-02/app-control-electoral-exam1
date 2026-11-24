@@ -1,0 +1,153 @@
+---
+description: Flujo obligatorio de trabajo mediante Feature-Driven Development, revisión y aprobación del usuario.
+alwaysApply: true
+---
+
+# Flujo de desarrollo — Control Electoral
+
+## 1. Metodología de desarrollo
+
+El proyecto utilizará Feature-Driven Development (FDD).
+
+El desarrollo se organizará mediante funcionalidades pequeñas, identificables y verificables, denominadas Features.
+
+No se debe generar toda la aplicación de una sola vez.
+
+Cada Feature debe tener un objetivo funcional concreto y cumplir los requisitos del proyecto.
+
+## 2. Flujo obligatorio de trabajo
+
+Para cada tarea o Feature, seguir estas etapas:
+
+### Etapa 1. Análisis
+
+- Comprender el requerimiento.
+- Revisar los archivos relacionados.
+- Consultar los requisitos y ADR aplicables.
+- Identificar las dependencias y restricciones.
+- Detectar información faltante o contradicciones.
+- Consultar las Skills necesarias.
+
+No modificar archivos durante esta etapa.
+
+### Etapa 2. Planificación
+
+Presentar una propuesta que incluya:
+
+- Objetivo de la Feature.
+- Funcionalidades que se implementarán.
+- Archivos que se crearán o modificarán.
+- Capas de Clean Architecture involucradas.
+- Tecnologías y ADR aplicables.
+- Validaciones necesarias.
+- Pruebas y criterios de aceptación.
+
+Esperar la aprobación del usuario antes de continuar.
+
+### Etapa 3. Preparación
+
+- Comprobar las dependencias existentes.
+- Revisar la compatibilidad de las tecnologías.
+- Identificar configuraciones necesarias.
+- Preparar archivos y estructuras previamente aprobados.
+
+El proyecto utiliza Expo SDK 58. Antes de incorporar una dependencia, verifica su compatibilidad con la versión de React Native y Expo del proyecto. Para paquetes del ecosistema Expo, utiliza ´npx expo install´. No actualices ni sustituyas dependencias sin revisar su compatibilidad y obtener aprobación.
+
+No instalar dependencias ni modificar configuraciones importantes sin autorización.
+
+### Etapa 4. Implementación
+
+- Desarrollar únicamente el alcance aprobado.
+- Respetar Clean Architecture.
+- Aplicar las Skills correspondientes.
+- Mantener consistencia con el código existente.
+- Evitar modificaciones ajenas a la Feature.
+- Explicar las decisiones técnicas relevantes.
+
+Si aparece un problema que cambia el alcance o la arquitectura, detenerse y consultar al usuario.
+
+### Etapa 5. Verificación
+
+Ejecutar las pruebas correspondientes:
+
+- Pruebas unitarias cuando apliquen.
+- Pruebas de integración cuando apliquen.
+- Validación de tipos con TypeScript.
+- Revisión de lint.
+- Verificación del funcionamiento en Android.
+- Comprobación de criterios de aceptación.
+
+No afirmar que una prueba fue exitosa si no se ejecutó.
+
+### Etapa 6. Revisión y aprobación
+
+Presentar:
+
+- Resumen de lo implementado.
+- Archivos creados y modificados.
+- Resultados de las pruebas.
+- Problemas encontrados.
+- Limitaciones pendientes.
+- Cumplimiento de los criterios de aceptación.
+
+Esperar la aprobación del usuario antes de comenzar otra Feature.
+
+## 3. Catálogo inicial de Features
+
+El proyecto se organizará inicialmente en las siguientes funcionalidades:
+
+| Código | Feature | Descripción |
+|---|---|---|
+| F01 | Autenticación y usuarios | Inicio de sesión, sesiones y roles. |
+| F02 | Gestión territorial | Provincias, cantones, parroquias, recintos y mesas. |
+| F03 | Gestión de personal | Coordinadores, veedores y asignaciones. |
+| F04 | Registro de actas | Captura, registro, validación y corrección de actas. |
+| F05 | OCR e inteligencia artificial | Extracción asistida de información mediante Gemini. |
+| F06 | Funcionamiento sin conexión | Persistencia local y sincronización. |
+| F07 | Seguimiento electoral | Progreso, resultados y Exit Poll. |
+| F08 | Monitoreo de errores | Registro y seguimiento de fallos mediante Crashlytics. |
+
+Este catálogo es una planificación inicial. Los alcances definitivos deben contrastarse con los requisitos aprobados.
+
+## 4. Uso de Skills
+
+Antes de realizar una tarea:
+
+1. Identificar qué conocimientos especializados requiere.
+2. Consultar las Skills correspondientes en `.cursor/skills/`.
+3. Seguir sus instrucciones.
+4. Aplicarlas sin contradecir los ADR ni las reglas generales.
+
+Las Skills complementan las reglas del proyecto; no las sustituyen.
+
+## 5. Control de cambios
+
+- No realizar cambios masivos sin aprobación.
+- No eliminar archivos sin comprobar sus dependencias.
+- No modificar archivos de configuración sin justificarlo.
+- No instalar paquetes por iniciativa propia.
+- No cambiar versiones de Expo o React Native sin autorización.
+- No realizar commits, push o merges sin autorización explícita.
+- Mantener el repositorio en un estado verificable.
+
+## 6. Comunicación con el usuario
+
+El usuario es un estudiante que necesita comprender y defender académicamente el proyecto.
+
+Por tanto:
+
+- Explicar las decisiones técnicas con claridad.
+- Utilizar un nivel de explicación progresivo.
+- Evitar soluciones innecesariamente complejas.
+- Indicar qué archivos deben revisarse.
+- Proporcionar comandos completos para Windows PowerShell.
+- No asumir que una operación se ejecutó si no existe confirmación.
+- No continuar automáticamente a la siguiente etapa.
+
+## 7. Regla principal
+
+La prioridad es desarrollar una Feature funcional, verificable y documentada antes de avanzar a la siguiente.
+
+El agente debe actuar como asistente de desarrollo y no como un ejecutor autónomo de todo el proyecto.
+
+**Ninguna etapa importante se considera aprobada sin confirmación explícita del usuario.**

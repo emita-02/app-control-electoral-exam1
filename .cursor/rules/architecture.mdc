@@ -1,0 +1,129 @@
+---
+description: Reglas obligatorias de arquitectura, tecnologías y decisiones arquitectónicas del proyecto.
+alwaysApply: true
+---
+
+# Reglas de arquitectura — Control Electoral
+
+## 1. Arquitectura general
+
+El proyecto debe implementar Clean Architecture, manteniendo separadas las responsabilidades de cada capa.
+
+La estructura debe contemplar:
+
+- **Dominio (Domain):** entidades, reglas de negocio y contratos de repositorios.
+- **Aplicación (Application):** casos de uso y coordinación de operaciones.
+- **Infraestructura (Infrastructure):** implementaciones de repositorios, servicios externos, persistencia local y comunicación con el backend.
+- **Presentación (Presentation):** pantallas, componentes, hooks y gestión del estado de la interfaz.
+
+La estructura definitiva de carpetas debe documentarse antes de comenzar a implementar las funcionalidades.
+
+## 2. Reglas de dependencia
+
+- El dominio no debe depender de React Native, Expo, Supabase ni otras herramientas externas.
+- Los casos de uso deben depender de abstracciones y no de implementaciones concretas.
+- La presentación no debe realizar consultas directas a Supabase ni ejecutar sentencias SQL.
+- Las implementaciones de infraestructura deben cumplir los contratos definidos por las capas correspondientes.
+- Las reglas de negocio deben mantenerse fuera de los componentes visuales.
+- Evitar dependencias circulares entre módulos y capas.
+
+## 3. Tecnologías establecidas por los ADR
+
+Respetar las siguientes decisiones del grupo:
+
+| ADR | Tecnología o decisión |
+|---|---|
+| ADR-01 | Supabase para backend y autenticación. |
+| ADR-02 | SQLite, Expo File System y NetInfo para funcionamiento sin conexión y sincronización. |
+| ADR-03 | Clean Architecture, Redux Toolkit, React Hook Form y Zod. |
+| ADR-04 | Expo Camera, Expo Image Manipulator y JPEG-JS para captura y procesamiento de imágenes. |
+| ADR-05 | Expo Location y React Native WebView para ubicación y mapas. |
+| ADR-06 | Firebase Crashlytics para monitoreo de errores. |
+| ADR-07 | React Navigation, Gorhom Bottom Sheet, Lottie, Reanimated y Uniwind. |
+
+No sustituir estas tecnologías por alternativas sin autorización.
+
+## 4. Gestión del estado y formularios
+
+- Utilizar Redux Toolkit para el estado global de la aplicación.
+- Utilizar React Hook Form para gestionar formularios.
+- Utilizar Zod para definir esquemas de validación.
+- Evitar duplicar información innecesariamente entre el estado global y el estado local.
+- Mantener las validaciones de negocio en las capas correspondientes.
+
+## 5. Backend y seguridad
+
+- Supabase será la plataforma principal del backend.
+- PostgreSQL será la base de datos.
+- Utilizar Row Level Security (RLS) para proteger los datos.
+- Las restricciones por rol y territorio deben validarse en el backend.
+- No utilizar claves privadas o claves de servicio dentro de la aplicación móvil.
+- Las operaciones sensibles deben ejecutarse mediante mecanismos seguros del backend.
+
+## 6. Funcionamiento sin conexión
+
+La aplicación debe permitir registrar y consultar información cuando no exista conexión a internet.
+
+Respetar ADR-02 y utilizar:
+
+- SQLite para persistencia local.
+- Expo File System para gestionar archivos locales.
+- NetInfo para detectar cambios de conectividad.
+- Un mecanismo de sincronización que gestione operaciones pendientes, errores y conflictos.
+
+Aplicar el supuesto S-03: los conflictos de edición se resuelven mediante Last-Write-Wins.
+
+No asumir que una operación local ya fue sincronizada hasta recibir confirmación del servidor.
+
+## 7. Procesamiento de actas mediante OCR
+
+- Utilizar Gemini API como servicio de IA para asistir en la extracción de información.
+- La comunicación con Gemini debe realizarse desde un servicio protegido del backend, como Supabase Edge Functions.
+- No exponer la API Key de Gemini en el cliente móvil.
+- Conservar la fotografía original como evidencia.
+- Validar los datos extraídos mediante reglas de negocio.
+- Requerir revisión y autorización humana antes de registrar resultados oficiales.
+
+El OCR es una herramienta de asistencia, no una fuente de aprobación automática.
+
+## 8. Seguridad e integridad electoral
+
+- Cada usuario solo debe acceder a los recursos autorizados para su rol y ámbito territorial.
+- Las operaciones de modificación deben respetar los permisos establecidos.
+- Conservar la relación entre las actas, sus evidencias y sus responsables.
+- Evitar sobrescribir información sin aplicar las reglas de sincronización.
+- No eliminar evidencias o registros históricos sin autorización y justificación.
+- No confiar exclusivamente en las restricciones visuales de la interfaz para proteger información.
+
+## 9. Interfaz y experiencia de usuario
+
+Respetar las tecnologías establecidas en ADR-07:
+
+- React Navigation para navegación.
+- Uniwind para estilos.
+- Reanimated para animaciones.
+- Lottie para animaciones de la aplicación.
+- Gorhom Bottom Sheet para paneles inferiores.
+
+La interfaz debe:
+
+- Adaptarse a dispositivos Android.
+- Ser sencilla y comprensible durante la jornada electoral.
+- Diferenciar claramente las acciones según el rol.
+- Mostrar estados de carga, éxito, error y validación.
+- Informar el estado de sincronización.
+- Evitar interacciones innecesarias que dificulten el registro de actas.
+
+## 10. Reglas para modificar la arquitectura
+
+Antes de realizar cualquier cambio arquitectónico:
+
+1. Revisar los ADR relacionados.
+2. Identificar qué capas y módulos se verían afectados.
+3. Explicar la necesidad del cambio.
+4. Presentar una propuesta.
+5. Esperar aprobación.
+
+Si existe una contradicción entre un ADR y la configuración actual del proyecto, informar el conflicto antes de modificar archivos.
+
+No crear nuevas tecnologías, patrones o capas sin justificar su necesidad.

@@ -1,0 +1,88 @@
+---
+description: Contexto funcional y requisitos generales del proyecto Control Electoral.
+alwaysApply: true
+---
+
+# Control Electoral — Contexto del proyecto
+
+## Visión general del proyecto
+
+Control Electoral es una aplicación móvil para Android desarrollada con React Native, Expo y TypeScript.
+
+Su propósito es brindar soporte al monitoreo electoral, así como al registro, validación y supervisión de actas electorales en Ecuador.
+
+La aplicación debe priorizar la integridad de los datos, la seguridad, la usabilidad, el funcionamiento sin conexión (offline) y la trazabilidad.
+
+## Configuración geográfica
+
+La configuración específica para el desarrollo es:
+
+- País: Ecuador.
+- Provincia: Pichincha.
+- Cantón: Quito.
+- Sistema operativo: Windows 11.
+- Backend: Un nuevo proyecto en Supabase.
+- Proveedor de IA/OCR: API de Gemini.
+
+No se deben generalizar los datos territoriales más allá de los requisitos aprobados para el proyecto.
+
+## Roles de usuario
+
+### 1. Coordinador provincial
+- Gestiona los recintos electorales dentro de su jurisdicción.
+- Crea coordinadores de recinto.
+- Monitorea el avance electoral en los distintos recintos.
+- Consulta los resultados para alcaldías y prefecturas.
+- Consulta información sobre el personal y los lugares de registro.
+
+### 2. Coordinador de recinto
+- Gestiona a los observadores electorales asignados a su recinto.
+- Asigna observadores a las mesas electorales.
+- Reemplaza a los observadores ausentes.
+- Supervisa y corrige actas electorales dentro de su ámbito de autorización.
+
+### 3. Observador electoral
+- Consulta las mesas electorales que tiene asignadas.
+- Registra actas electorales correspondientes a alcaldías y prefecturas.
+- Sube evidencia fotográfica.
+- Registra la ubicación mediante GPS.
+- Corrige sus propios registros cuando cuenta con la debida autorización.
+- Consulta el estado de sincronización.
+
+## Requisitos funcionales principales
+
+La aplicación debe permitir:
+
+- Autenticación y acceso basado en roles.
+- Gestión territorial: provincias, cantones, parroquias, recintos electorales y mesas electorales.
+- Gestión y asignación de personal.
+- Registro y validación de actas electorales.
+- Inclusión de evidencia fotográfica e información de GPS.
+- Extracción de información asistida por OCR.
+- Funcionamiento sin conexión (offline) y sincronización.
+- Paneles de control (dashboards) para encuestas a boca de urna (*exit polls*) y seguimiento del avance electoral.
+- Monitoreo automático de errores.
+
+## Restricciones obligatorias del proyecto
+
+- Seguir los siete ADR (*Architecture Decision Records*) aprobados por el grupo.
+- Implementar una arquitectura limpia (*Clean Architecture*). 
+- Utiliza el desarrollo basado en funcionalidades (Feature-Driven Development, FDD).
+- Emplea las tecnologías establecidas en los ADR (Architecture Decision Records).
+- Preserva la integridad de los datos y la trazabilidad electoral.
+- Aplica el control de permisos en el *backend*.
+- Nunca consideres el resultado de un OCR como un resultado electoral aprobado automáticamente.
+- No inventes requisitos de negocio que no existan.
+
+## Configuración del desarrollo
+
+La aplicación utiliza Expo SDK 58.
+
+Antes de implementar funcionalidades de Expo o React Native:
+
+1. Revisa las versiones de las dependencias instaladas.
+2. Consulta la documentación oficial correspondiente a la versión del SDK instalada.
+3. Verifica la compatibilidad con las dependencias existentes.
+4. Evita actualizaciones innecesarias.
+
+El estudiante debe comprender y ser capaz de explicar la funcionalidad implementada, así como las decisiones arquitectónicas tomadas.
