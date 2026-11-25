@@ -18,9 +18,11 @@ import { useAppSelector } from '@/store/store';
 export function RoleHome({
   role,
   onOpenTerritory,
+  onOpenPersonnel,
 }: {
   role: UserRole;
   onOpenTerritory?: () => void;
+  onOpenPersonnel?: () => void;
 }) {
   const { signOut } = useAuthActions();
   const { error, profile } = useAppSelector((state) => state.auth);
@@ -81,6 +83,16 @@ export function RoleHome({
         <PrimaryButton
           label="Consultar estructura territorial"
           onPress={onOpenTerritory}
+        />
+      ) : null}
+      {onOpenPersonnel ? (
+        <PrimaryButton
+          label={
+            role === userRoles.provincialCoordinator
+              ? 'Gestionar coordinadores de recinto'
+              : 'Gestionar veedores y asignaciones'
+          }
+          onPress={onOpenPersonnel}
         />
       ) : null}
 

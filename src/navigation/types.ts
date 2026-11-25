@@ -9,6 +9,7 @@ export type AuthStackParamList = {
 export type WorkspaceStackParamList = {
   ProvincialHome: undefined;
   TerritorialStructure: undefined;
+  PersonnelManagement: undefined;
   PrecinctCoordinatorHome: undefined;
   ObserverHome: undefined;
 };

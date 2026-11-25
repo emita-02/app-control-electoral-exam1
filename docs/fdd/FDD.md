@@ -93,6 +93,20 @@ Incluye:
 
 El reemplazo debe conservar los registros electorales anteriores y respetar las autorizaciones correspondientes.
 
+#### Alcance implementado
+
+- El coordinador provincial consulta los coordinadores visibles en su provincia y puede invitar un coordinador para un recinto de esa provincia. Se impide crear un segundo coordinador activo para el mismo recinto.
+- El coordinador de recinto consulta los veedores de su recinto, puede invitarlos por correo y asignar un veedor activo a una o varias mesas de ese recinto.
+- El reemplazo cierra las asignaciones anteriores con `ended_at`, `ended_by` y `end_reason`, y registra las nuevas filas en `watcher_assignments`. No elimina asignaciones históricas ni actas.
+- La Edge Function `gestionar-personal` valida sesión, cuenta activa, rol, provincia/recinto y pertenencia de las mesas. La creación de usuarios usa Supabase Auth Admin del lado servidor; la clave de servicio no se incluye en la aplicación.
+- Se usan las tablas existentes `profiles` y `watcher_assignments`; no se modifica el esquema ni las políticas RLS.
+- Los formularios no recopilan cédula ni teléfono: `profiles` no contiene columnas para esos datos y el alcance aprobado no autoriza cambiar el esquema.
+- El enlace de invitación se procesa como una recuperación de contraseña para que el usuario establezca su contraseña desde la aplicación.
+
+**Estado de F04:** implementación local completada; pendiente desplegar `gestionar-personal`, validar la plantilla/correo y URL de invitación en Supabase, y probar los flujos con cuentas autorizadas en Android. La configuración local declara `controlelectoral://reset-password` como URL de redirección; la configuración remota no se modificó.
+
+**Verificación:** el lint dirigido de la aplicación y la comprobación TypeScript limitada a `src/` pasaron. `npx expo export --platform android --no-minify` generó el bundle Android. El lint completo continúa fallando por el error preexistente de `src/hooks/use-color-scheme.web.ts`. La comprobación TypeScript completa no está configurada para los tipos/imports de Deno de las Edge Functions (incluida la nueva `gestionar-personal`) y también reporta errores preexistentes en `procesar-acta-ocr`; la sintaxis de la nueva función y su lint dirigido sí se validaron, pero su runtime no se pudo ejecutar porque Deno y Docker/Podman no están instalados. Las validaciones unitarias dirigidas de los casos de uso pasaron; no hay un ejecutor de pruebas automatizadas configurado. No se desplegó la función ni se modificaron datos remotos.
+
 ### F05 — Registro de actas
 
 Permite registrar actas correspondientes a:

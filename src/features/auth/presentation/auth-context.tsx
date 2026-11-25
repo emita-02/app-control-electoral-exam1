@@ -286,6 +286,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           parsed.hostname === 'reset-password' ||
           parsed.pathname.endsWith('/reset-password') ||
           params.get('type') === 'recovery' ||
+          params.get('type') === 'invite' ||
           params.has('token_hash')
         );
       } catch {

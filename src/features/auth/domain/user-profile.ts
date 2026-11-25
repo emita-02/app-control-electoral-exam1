@@ -12,6 +12,7 @@ export type UserProfile = {
   roleId: number;
   role: UserRole;
   provinceId: number | null;
+  pollingPlaceId: number | null;
 };
 
 export const roleLabels: Record<UserRole, string> = {

@@ -13,6 +13,7 @@ import { RoleHome } from '@/features/auth/presentation/role-home';
 import { userRoles } from '@/features/auth/domain/user-profile';
 import { LoadingScreen } from '@/features/auth/presentation/components/auth-ui';
 import { TerritoryScreen } from '@/features/territory/presentation/territory-screen';
+import { PersonnelManagementScreen } from '@/features/personnel/presentation/personnel-management-screen';
 import { useAppSelector } from '@/store/store';
 import type {
   AuthStackParamList,
@@ -41,6 +42,7 @@ const linking: LinkingOptions<RootStackParamList> = {
         screens: {
           ProvincialHome: 'provincial',
           TerritorialStructure: 'territory',
+          PersonnelManagement: 'personnel',
           PrecinctCoordinatorHome: 'precinct-coordinator',
           ObserverHome: 'observer',
         },
@@ -71,12 +73,20 @@ function ProvincialHomeScreen({
     <RoleHome
       role={userRoles.provincialCoordinator}
       onOpenTerritory={() => navigation.navigate('TerritorialStructure')}
+      onOpenPersonnel={() => navigation.navigate('PersonnelManagement')}
     />
   );
 }
 
-function PrecinctCoordinatorHomeScreen() {
-  return <RoleHome role={userRoles.precinctCoordinator} />;
+function PrecinctCoordinatorHomeScreen({
+  navigation,
+}: NativeStackScreenProps<WorkspaceStackParamList, 'PrecinctCoordinatorHome'>) {
+  return (
+    <RoleHome
+      role={userRoles.precinctCoordinator}
+      onOpenPersonnel={() => navigation.navigate('PersonnelManagement')}
+    />
+  );
 }
 
 function ObserverHomeScreen() {
@@ -111,13 +121,23 @@ function WorkspaceNavigator() {
             name="TerritorialStructure"
             component={TerritoryScreen}
           />
+          <WorkspaceStack.Screen
+            name="PersonnelManagement"
+            component={PersonnelManagementScreen}
+          />
         </>
       ) : null}
       {role === userRoles.precinctCoordinator ? (
-        <WorkspaceStack.Screen
-          name="PrecinctCoordinatorHome"
-          component={PrecinctCoordinatorHomeScreen}
-        />
+        <>
+          <WorkspaceStack.Screen
+            name="PrecinctCoordinatorHome"
+            component={PrecinctCoordinatorHomeScreen}
+          />
+          <WorkspaceStack.Screen
+            name="PersonnelManagement"
+            component={PersonnelManagementScreen}
+          />
+        </>
       ) : null}
       {role === userRoles.observer ? (
         <WorkspaceStack.Screen name="ObserverHome" component={ObserverHomeScreen} />

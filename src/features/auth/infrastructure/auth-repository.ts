@@ -33,7 +33,7 @@ export async function loadCurrentProfile(userId: string): Promise<UserProfile> {
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('id, full_name, role_id, province_id, is_active')
+    .select('id, full_name, role_id, province_id, polling_place_id, is_active')
     .eq('id', userId)
     .maybeSingle();
 
@@ -46,7 +46,10 @@ export async function loadCurrentProfile(userId: string): Promise<UserProfile> {
     typeof profile.role_id !== 'number' ||
     !Number.isSafeInteger(profile.role_id) ||
     (profile.province_id !== null &&
-      (typeof profile.province_id !== 'number' || !Number.isSafeInteger(profile.province_id)))
+      (typeof profile.province_id !== 'number' || !Number.isSafeInteger(profile.province_id))) ||
+    (profile.polling_place_id !== null &&
+      (typeof profile.polling_place_id !== 'number' ||
+        !Number.isSafeInteger(profile.polling_place_id)))
   ) {
     throw new Error('No se pudo validar el perfil activo de esta cuenta.');
   }
@@ -67,6 +70,7 @@ export async function loadCurrentProfile(userId: string): Promise<UserProfile> {
     roleId: profile.role_id,
     role,
     provinceId: profile.province_id,
+    pollingPlaceId: profile.polling_place_id,
   };
 }
 
@@ -129,8 +133,12 @@ export async function processAuthCallback(url: string): Promise<void> {
   }
 
   const tokenHash = params.get('token_hash');
-  if (tokenHash && params.get('type') === 'recovery') {
-    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' });
+  const tokenType = params.get('type');
+  if (tokenHash && (tokenType === 'recovery' || tokenType === 'invite')) {
+    const { error } = await supabase.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: tokenType,
+    });
     if (error) {
       throw new Error('El enlace de recuperación expiró o no es válido.');
     }
@@ -139,7 +147,11 @@ export async function processAuthCallback(url: string): Promise<void> {
 
   const accessToken = params.get('access_token');
   const refreshToken = params.get('refresh_token');
-  if (accessToken && refreshToken && params.get('type') === 'recovery') {
+  if (
+    accessToken &&
+    refreshToken &&
+    (tokenType === 'recovery' || tokenType === 'invite')
+  ) {
     const { error } = await supabase.auth.setSession({
       access_token: accessToken,
       refresh_token: refreshToken,
