@@ -45,3 +45,7 @@ example
 # Archivo con credenciales
 .env
 .cursor
+
+export_context.js
+contexto_proyecto.md
+

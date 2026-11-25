@@ -1,7 +1,9 @@
 import {
+  checkForUnsentReports,
   getCrashlytics,
   log,
   recordError,
+  sendUnsentReports,
   setAttributes,
   type Crashlytics,
 } from '@react-native-firebase/crashlytics';
@@ -108,5 +110,25 @@ export class FirebaseCrashlyticsErrorReporter implements ErrorReporter {
 
   countPending(): number {
     return this.localReporter.countPending();
+  }
+
+  async flush(): Promise<number> {
+    if (!crashlytics) {
+      return 0;
+    }
+
+    try {
+      if (await checkForUnsentReports(crashlytics)) {
+        sendUnsentReports(crashlytics);
+      }
+    } catch {
+      // Crashlytics puede no estar disponible en compilaciones de depuración.
+      return 0;
+    }
+
+    if (this.localReporter instanceof SQLiteErrorReporter) {
+      return this.localReporter.markAllSent();
+    }
+    return 0;
   }
 }

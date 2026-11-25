@@ -90,11 +90,12 @@ test('rejects negative, fractional, and empty candidate vote values', () => {
   }
 });
 
-test('observer can correct only their own act on an assigned table', () => {
+test('observer can correct acts only on currently assigned tables', () => {
   assert.equal(canCorrectElectoralAct(observer, act, [8]), true);
   assert.equal(canCorrectElectoralAct(observer, act, [9]), false);
+  assert.equal(canCorrectElectoralAct(observer, { ...act, authorId: 'other-user' }, [8]), true);
   assert.equal(
-    canCorrectElectoralAct(observer, { ...act, authorId: 'other-user' }, [8]),
+    canCorrectElectoralAct(observer, { ...act, authorId: 'other-user' }, [9]),
     false,
   );
 });
@@ -143,6 +144,24 @@ test('prepares an immutable correction proposal with a traceable reason and acto
   assert.equal(result.proposal.reason, 'Se corrigió un valor transcrito.');
 });
 
+test('a replacement observer can prepare a correction while the original author is preserved', () => {
+  const replacedAct = { ...act, authorId: 'previous-observer' };
+  const result = prepareActCorrection({
+    act: replacedAct,
+    actor: observer,
+    assignedTableIds: [8],
+    values: validForm,
+    reason: 'Reemplazo del veedor ausente',
+    now: new Date('2026-11-25T15:00:00.000Z'),
+  });
+
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.proposal.correctedBy.userId, observer.id);
+    assert.equal(replacedAct.authorId, 'previous-observer');
+  }
+});
+
 test('rejects a correction whose candidate list differs from the act', () => {
   const result = prepareActCorrection({
     act,
@@ -165,7 +184,7 @@ test('does not prepare unauthorized, unreasoned, or arithmetically invalid corre
   const unauthorized = prepareActCorrection({
     act,
     actor: { ...observer, id: 'other-user' },
-    assignedTableIds: [8],
+    assignedTableIds: [9],
     values: validForm,
     reason: 'Motivo',
   });

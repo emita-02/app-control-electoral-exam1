@@ -305,12 +305,9 @@ const handler = withSupabase(
     }
 
     if (role === "veedor") {
-      if (actRow.registered_by !== authData.user.id) {
-        return jsonResponse(
-          { error: "Solo puedes confirmar o corregir tus propias actas." },
-          403,
-        );
-      }
+      // S-04: `registered_by` no se modifica. El veedor que recibe la mesa
+      // hereda el acceso al acta; la autorización depende de la asignación
+      // vigente, no de ser el autor original.
       const { data: assignment, error: assignmentError } = await ctx.supabase
         .from("watcher_assignments")
         .select("id")

@@ -12,10 +12,11 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import {
-  AuthHeading,
+  AppShell,
   AuthNotice,
-  AuthShell,
   PrimaryButton,
+  RoleHeader,
+  StatusBadge,
 } from '@/features/auth/presentation/components/auth-ui';
 import {
   captureEvidence,
@@ -36,8 +37,15 @@ export function EvidenceCaptureScreen({
   const [, requestCameraPermission, getCameraPermission] = useCameraPermissions();
   const profile = useAppSelector((state) => state.auth.profile);
   const { actId } = route.params;
-  const { captures, captureError, captureStatus, uploadError, uploadStatus } =
-    useAppSelector((state) => state.evidence);
+  const allCaptures = useAppSelector((state) => state.evidence.captures);
+  const {
+    captureError,
+    captureStatus,
+    uploadError,
+    uploadStatus,
+  } = useAppSelector((state) => state.evidence);
+  // Solo se pueden registrar fotografías tomadas para esta acta.
+  const captures = allCaptures.filter((capture) => capture.actId === actId);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [locationReady, setLocationReady] = useState(false);
@@ -142,6 +150,7 @@ export function EvidenceCaptureScreen({
 
       await dispatch(
         captureEvidence({
+          actId,
           userId: profile.id,
           localUri: photo.uri,
           capturedAt,
@@ -194,60 +203,68 @@ export function EvidenceCaptureScreen({
   };
 
   return (
-    <AuthShell>
-      <Pressable
-        accessibilityRole="button"
-        className="min-h-11 justify-center"
-        onPress={() => navigation.goBack()}>
-        <Text className="text-base font-semibold text-electoral-navy">
-          Volver al inicio
-        </Text>
-      </Pressable>
-      <AuthHeading
-        title="Evidencia fotográfica"
-        description={`Toma una fotografía del acta ${actId}. La aplicación comprobará la nitidez y obtendrá una ubicación GPS actual; no se puede elegir una imagen de la galería.`}
-      />
-
+    <AppShell
+      header={
+        <RoleHeader
+          badge={`Acta #${actId}`}
+          title="Evidencia fotográfica"
+          subtitle="Captura directa con cámara, control de nitidez y sello GPS."
+          onBack={() => navigation.goBack()}
+          backLabel="Inicio"
+        />
+      }>
       {permissionError ? <AuthNotice message={permissionError} /> : null}
       {captureError ? <AuthNotice message={captureError} /> : null}
       {uploadError ? <AuthNotice message={uploadError} /> : null}
       {uploadStatus === 'loading' ? (
-        <AuthNotice message="Registrando la evidencia…" />
+        <AuthNotice success message="Subiendo y registrando evidencia segura…" />
       ) : null}
 
       {settingsRequired ? (
         <Pressable
           accessibilityRole="button"
-          className="min-h-12 items-center justify-center rounded-xl border border-electoral-border bg-white px-4"
+          className="min-h-12 items-center justify-center rounded-2xl border-2 border-electoral-navy bg-white px-4"
           onPress={() => void openSettings()}>
-          <Text className="text-base font-semibold text-electoral-navy">
-            Abrir configuración
+          <Text className="text-sm font-extrabold text-electoral-navy">
+            Abrir configuración del dispositivo
           </Text>
         </Pressable>
       ) : null}
 
       {!cameraEnabled ? (
-        <PrimaryButton
-          label="Permitir cámara y ubicación"
-          loading={permissionBusy}
-          onPress={() => void enableCapture()}
-        />
+        <View className="gap-4 rounded-2xl border border-electoral-border bg-white p-5 shadow-xs">
+          <StatusBadge label="Cámara directa obligatoria" tone="cyan" />
+          <Text className="text-base font-extrabold text-electoral-navy">
+            Preparar captura del acta física
+          </Text>
+          <Text className="text-sm leading-5 text-electoral-muted">
+            La aplicación verificará automáticamente que la imagen sea legible y asociará tus coordenadas GPS actuales.
+          </Text>
+          <PrimaryButton
+            label="Activar cámara y ubicación"
+            loading={permissionBusy}
+            onPress={() => void enableCapture()}
+          />
+        </View>
       ) : previewUri ? (
-        <>
+        <View className="gap-4 rounded-2xl border border-electoral-border bg-white p-4 shadow-xs">
           <Image
             accessibilityLabel="Vista previa de la fotografía del acta"
-            className="h-80 w-full rounded-xl"
+            className="h-80 w-full rounded-xl bg-slate-100"
             resizeMode="contain"
             source={{ uri: previewUri }}
           />
           {captureStatus === 'loading' ? (
-            <Text className="text-center text-sm text-electoral-muted">
-              Verificando nitidez y ubicación GPS…
-            </Text>
+            <View className="flex-row items-center justify-center gap-2 py-2">
+              <ActivityIndicator color="#00AEEF" />
+              <Text className="text-sm font-semibold text-electoral-navy">
+                Analizando nitidez y ubicación GPS…
+              </Text>
+            </View>
           ) : null}
           {captureStatus === 'succeeded' ? (
             <AuthNotice
-              message="La fotografía superó la validación y se agregó como evidencia."
+              message="Fotografía nítida verificada y agregada como evidencia."
               success
             />
           ) : null}
@@ -257,13 +274,14 @@ export function EvidenceCaptureScreen({
                 ? 'Repetir fotografía'
                 : 'Tomar otra fotografía'
             }
+            variant="secondary"
             disabled={captureStatus === 'loading'}
             onPress={retakePhoto}
           />
-        </>
+        </View>
       ) : (
-        <>
-          <View className="h-80 w-full overflow-hidden rounded-xl bg-electoral-navy">
+        <View className="gap-4 rounded-2xl border border-electoral-border bg-white p-4 shadow-xs">
+          <View className="h-80 w-full overflow-hidden rounded-2xl border-2 border-electoral-cyan bg-electoral-navy">
             <CameraView
               ref={cameraRef}
               style={{ width: '100%', height: '100%' }}
@@ -279,9 +297,9 @@ export function EvidenceCaptureScreen({
             />
           </View>
           {!cameraReady ? (
-            <View className="items-center gap-2">
+            <View className="flex-row items-center justify-center gap-2">
               <ActivityIndicator color="#00AEEF" />
-              <Text className="text-sm text-electoral-muted">
+              <Text className="text-sm font-medium text-electoral-muted">
                 Iniciando cámara…
               </Text>
             </View>
@@ -298,54 +316,54 @@ export function EvidenceCaptureScreen({
           {cameraEnabled && !locationReady && !permissionBusy ? (
             <PrimaryButton
               label="Reintentar ubicación"
+              variant="secondary"
               onPress={() => void retryLocationAccess()}
             />
           ) : null}
           <PrimaryButton
-            label="Tomar fotografía"
+            label="Capturar fotografía"
             loading={captureStatus === 'loading' || permissionBusy}
             disabled={!cameraReady || !locationReady}
             onPress={() => void takePhoto()}
           />
-        </>
+        </View>
       )}
 
       {captures.length > 0 ? (
-        <View className="gap-4">
-          <Text className="text-lg font-bold text-electoral-navy">
-            Fotografías capturadas
+        <View className="gap-3">
+          <Text className="px-1 text-base font-extrabold text-electoral-navy">
+            Fotografías verificadas ({captures.length})
           </Text>
-          {captures.map((capture, index) => (
+          {captures.map((capture) => (
             <View
               key={capture.localUri}
-              className="gap-3 rounded-xl border border-electoral-border bg-white p-4">
+              className="gap-3 rounded-2xl border border-electoral-border bg-white p-4 shadow-xs">
               <Image
-                accessibilityLabel="Fotografía capturada del acta"
-                className="h-40 w-full rounded-lg"
+                accessibilityLabel={`Fotografía capturada del acta ${capture.actId}`}
+                className="h-44 w-full rounded-xl"
                 resizeMode="cover"
                 source={{ uri: capture.localUri }}
               />
-              <Text className="text-sm text-electoral-text">
+              <View className="flex-row flex-wrap gap-2">
+                <StatusBadge label="Nitidez OK" tone="cyan" />
+                <StatusBadge
+                  label={`GPS: ${capture.latitude.toFixed(4)}, ${capture.longitude.toFixed(4)}`}
+                  tone="navy"
+                />
+              </View>
+              <Text className="text-xs text-electoral-muted">
                 Capturada: {new Date(capture.capturedAt).toLocaleString('es-EC')}
               </Text>
-              <Text className="text-sm text-electoral-text">
-                Ubicación: {capture.latitude.toFixed(6)}, {capture.longitude.toFixed(6)}
-              </Text>
-              <Text className="text-sm text-electoral-muted">
-                Nitidez verificada · Referencia local guardada en el dispositivo.
-              </Text>
-              {index === 0 ? (
-                <PrimaryButton
-                  label="Registrar evidencia y continuar"
-                  loading={uploadStatus === 'loading'}
-                  disabled={uploadStatus === 'loading'}
-                  onPress={() => void registerEvidence({ ...capture, actId })}
-                />
-              ) : null}
+              <PrimaryButton
+                label="Registrar evidencia y continuar al OCR →"
+                loading={uploadStatus === 'loading'}
+                disabled={uploadStatus === 'loading'}
+                onPress={() => void registerEvidence(capture)}
+              />
             </View>
           ))}
         </View>
       ) : null}
-    </AuthShell>
+    </AppShell>
   );
 }

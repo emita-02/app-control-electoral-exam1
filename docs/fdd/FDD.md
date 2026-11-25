@@ -34,7 +34,7 @@ El sistema debe recuperar el perfil y las asignaciones territoriales del usuario
 - Pendiente: el cambio forzoso de contraseña temporal requiere una señal de primer ingreso que no forma parte del contrato de perfil confirmado.
 - Pendiente de configuración: validar que el autorregistro esté deshabilitado en el proyecto Supabase y permitir la URL de recuperación en sus redirecciones. No se modificó configuración remota.
 
-**Estado de F01:** implementada con React Navigation; pendientes la validación del flujo con una cuenta autorizada y las configuraciones remotas indicadas.
+**Estado de F01:** implementada con React Navigation; pendientes la validación del flujo con una cuenta autorizada y las configuraciones remotas indicadas. RF-03 (cambio obligatorio de clave inicial) sigue sin implementarse: no existe en el esquema verificado un indicador de "contraseña temporal" que permita forzar el cambio sin inventar columnas.
 
 **Verificación:** Expo Doctor aprobó 20/20 comprobaciones, el bundle Android se generó sin Expo Router y el lint dirigido a F01 pasó. `npx expo lint` sigue detectando un error preexistente en `src/hooks/use-color-scheme.web.ts`; `npx tsc --noEmit` reporta errores preexistentes de configuración/tipos en la Edge Function de OCR. No se validó el flujo de autenticación contra una cuenta real autorizada.
 
@@ -97,15 +97,16 @@ El reemplazo debe conservar los registros electorales anteriores y respetar las 
 
 - El coordinador provincial consulta los coordinadores visibles en su provincia y puede invitar un coordinador para un recinto de esa provincia. Se impide crear un segundo coordinador activo para el mismo recinto.
 - El coordinador de recinto consulta los veedores de su recinto, puede invitarlos por correo y asignar un veedor activo a una o varias mesas de ese recinto.
-- El reemplazo cierra las asignaciones anteriores con `ended_at`, `ended_by` y `end_reason`, y registra las nuevas filas en `watcher_assignments`. No elimina asignaciones históricas ni actas.
+- El reemplazo cierra las asignaciones anteriores con `ended_at`, `ended_by` y `end_reason`, y registra las nuevas filas en `watcher_assignments`. No elimina asignaciones históricas ni actas. `registered_by` se conserva siempre.
+- S-04: el veedor que recibe una mesa hereda el acceso para revisar, confirmar el OCR y corregir las actas existentes de esa mesa. La autorización depende de la asignación vigente a la mesa, no de ser el autor original; el coordinador de recinto mantiene acceso a su recinto. No requiere columnas nuevas.
 - La Edge Function `gestionar-personal` valida sesión, cuenta activa, rol, provincia/recinto y pertenencia de las mesas. La creación de usuarios usa Supabase Auth Admin del lado servidor; la clave de servicio no se incluye en la aplicación.
 - Se usan las tablas existentes `profiles` y `watcher_assignments`; no se modifica el esquema ni las políticas RLS.
 - Los formularios no recopilan cédula ni teléfono: `profiles` no contiene columnas para esos datos y el alcance aprobado no autoriza cambiar el esquema.
 - El enlace de invitación se procesa como una recuperación de contraseña para que el usuario establezca su contraseña desde la aplicación.
 
-**Estado de F04:** implementación completada y `gestionar-personal` activa en remoto; pendiente validar la plantilla/correo y la URL de invitación en Supabase, y probar los flujos con cuentas autorizadas en Android. La configuración local declara `controlelectoral://reset-password` como URL de redirección; la configuración remota no se modificó.
+**Estado de F04:** implementación completada en cliente y en la Edge Function (incluido S-04), con `gestionar-personal` activa en remoto según información previa; pendiente validar la plantilla/correo, la URL de invitación, el HTTP 500 sin reproducir y probar los flujos con cuentas autorizadas en Android. La configuración local declara `controlelectoral://reset-password` como URL de redirección; la configuración remota no se modificó.
 
-**Verificación:** el lint dirigido de la aplicación y la comprobación TypeScript limitada a `src/` pasaron. `npx expo export --platform android --no-minify` generó el bundle Android. `gestionar-personal` aparece `ACTIVE` en remoto. El lint completo continúa fallando por el error preexistente de `src/hooks/use-color-scheme.web.ts`. La comprobación TypeScript completa no está configurada para los tipos/imports de Deno de las Edge Functions; la sintaxis de la nueva función y su lint dirigido sí se validaron, pero su runtime no se pudo ejecutar porque Deno y Docker/Podman no están instalados. Las validaciones unitarias dirigidas de los casos de uso pasaron. No se modificaron datos de usuario, esquema ni políticas RLS.
+**Verificación:** `npx expo lint` y la comprobación TypeScript limitada a `src/` pasaron. `npx expo export --platform android` generó el bundle Android. `npx supabase config validate` declaró las seis funciones sin errores. La regla S-04 se cubre con pruebas de dominio. La comprobación TypeScript completa sigue sin incluir los tipos/imports de Deno de las Edge Functions; el runtime de estas no se pudo ejecutar porque Deno y Docker/Podman no están instalados. No se modificaron datos de usuario, esquema ni políticas RLS.
 
 ### F05 — Registro de actas
 
@@ -163,7 +164,7 @@ La ubicación fuera del recinto genera una advertencia y no un bloqueo automáti
 - La carga usa el bucket privado real `act-evidence`, con ruta `${actId}/${uuid}.jpg` y compresión JPEG. La Edge Function `registrar-evidencia`, desplegada en remoto, valida sesión, cuenta activa, rol `veedor`, asignación vigente a la mesa del acta y existencia del archivo; registra `act_evidence` con clave de servicio solo en servidor y es idempotente por `storage_path`.
 - La ubicación fuera del recinto produce una advertencia heurística en el panel (distancia al centroide de evidencias > 1.000 m), nunca un bloqueo automático, coherente con S-02. No se modificaron esquema, RLS ni datos.
 
-**Estado de F06:** captura, persistencia local durable, carga protegida y metadatos integrados con F05/F08/F09. Pendiente de prueba en dispositivo Android, calibración del umbral y validación con el bucket remoto usando una cuenta autorizada.
+**Estado de F06:** captura, persistencia local durable, carga protegida y metadatos integrados con F05/F08/F09. Cada captura registra el `actId` para el que se tomó y la pantalla solo ofrece las fotografías de esa acta; se eliminó el uso de `captures[0]` global. Pendiente de prueba en dispositivo Android, calibración del umbral, validación con el bucket remoto usando una cuenta autorizada y la advertencia GPS de S-02 (no hay coordenadas de recinto verificadas en el esquema).
 
 **Verificación:** las seis pruebas unitarias dirigidas pasaron; ESLint y TypeScript limitado a `src/` pasaron; Expo Doctor aprobó 20/20 comprobaciones y el bundle Android se exportó correctamente. La función `registrar-evidencia` aparece `ACTIVE` en remoto. No se validó una carga real contra el bucket remoto.
 
@@ -188,7 +189,7 @@ Las correcciones deben conservar los datos anteriores, los nuevos valores, el us
 - La Edge Function `confirmar-resultados`, desplegada en remoto, comprueba rol, autoría/asignación del veedor o jurisdicción del coordinador de recinto, catálogo oficial y aritmética. Escribe `act_results`, hace la transición `borrador` → `aprobada` para respetar el trigger deferido e inserta `act_corrections` solo cuando los valores cambian. El historial es inmutable por el trigger existente.
 - La confirmación humana del OCR usa la misma función con `confirm_ocr`; los valores extraídos nunca se aprueban automáticamente (S-06). Sin conexión, ambas acciones se encolan y el worker las envía al recuperar red; prevalece la última modificación enviada (S-03).
 
-**Estado de F07:** validación, autorización en servidor, corrección durable e historial integrados. No se añadió un estado de aprobación adicional porque los requisitos no definen quién aprueba formalmente una corrección.
+**Estado de F07:** validación, autorización en servidor, corrección durable e historial integrados. La propuesta ya no se envía al prepararla: requiere un botón explícito de "Confirmar y aplicar corrección" que constituye la autorización humana (S-06). No se añadió un estado de aprobación adicional porque los requisitos no definen quién aprueba formalmente una corrección ni existe una columna verificada para almacenarlo.
 
 **Pendiente:** prueba con cuentas reales de veedor y coordinador de recinto, incluida la verificación de rechazos por jurisdicción y de la inmutabilidad del historial.
 
@@ -217,7 +218,7 @@ Los resultados del OCR son sugerencias. Nunca se deben aprobar ni registrar auto
 - Sin conexión, el worker procesa la cola `process_ocr`, guarda `ocr_result.${localEvidenceId}` en SQLite y registra una entrada `ocr_review.*`. El historial de pendientes permite abrir la revisión cuando vuelve la conectividad y descarta la entrada después de confirmar.
 - No se modificaron esquema, RLS ni relaciones; la función no persiste resultados propios fuera de los campos existentes del acta y del historial de correcciones.
 
-**Estado de F08:** captura → evidencia → OCR → revisión editable → confirmación humana integrado de extremo a extremo. El secreto de Gemini existe en Supabase; pendiente de prueba real con documentos ficticios o autorizados y verificación del tipo MIME/tamaño en dispositivo.
+**Estado de F08:** captura → evidencia → OCR → revisión editable → confirmación humana integrado de extremo a extremo. El resultado OCR ya obtenido se reutiliza desde `local_state` para no repetir llamadas a Gemini; la revisión humana sigue siendo obligatoria. El secreto de Gemini existe en Supabase; pendiente de prueba real con documentos ficticios o autorizados y verificación del tipo MIME/tamaño en dispositivo.
 
 **Verificación:** las siete aserciones del validador de respuesta OCR y las 18 pruebas unitarias dirigidas pasaron; ESLint y TypeScript limitado a `src/` pasaron; Expo Doctor aprobó 20/20 comprobaciones y el bundle Android se exportó. `procesar-acta-ocr` aparece `ACTIVE` en remoto. No se realizó una llamada real a Gemini.
 
@@ -238,13 +239,14 @@ La estrategia respeta ADR-02.
 #### Implementación completada
 
 - `SQLiteOfflineQueue` conserva operaciones `register_act`, `upload_evidence`, `process_ocr`, `confirm_ocr`, `apply_correction` y `exit_poll`, con estado, intentos, error y fecha. `local_state` guarda los mapas de identificadores locales a remotos, el catálogo cacheado por veedor y los resultados/revisiones de OCR.
-- `NetInfoNetworkStatus` detecta conectividad y el bootstrap de la sesión sincroniza automáticamente al recuperar red. `OfflineSyncWorker` procesa la cola en dos fases: primero acta y evidencia, después OCR, confirmación/corrección y Exit Poll. Los fallos se marcan como `failed`, se reintentan manualmente y se reportan al registrador de errores.
+- `NetInfoNetworkStatus` detecta conectividad y el bootstrap de la sesión sincroniza automáticamente al recuperar red. `OfflineSyncWorker` ejecuta dos fases obligatorias (ADR-02): fase 1 de carga (`register_act` → `upload_evidence` → `process_ocr`, incluido el OCR generado durante la misma pasada) y fase 2 de cierre (`confirm_ocr`, `apply_correction`, `exit_poll`). Registra huellas de idempotencia, aplica retroceso exponencial acotado (1–16 min, máximo 5 intentos) y no procesa operaciones creadas por otra cuenta.
 - La fotografía se copia al directorio persistente del dispositivo antes de encolarse; la cola conserva esa ruta durable, no la URI temporal de la cámara.
-- La pantalla `OfflineHistory` muestra pendientes, permite sincronizar o reintentar y ofrece las revisiones de OCR ya generadas. Los actos de confirmación/corrección prevalecen por última modificación (S-03); las operaciones se envían con la sesión del usuario y las validaciones del servidor.
+- La pantalla `OfflineHistory` muestra pendientes, permite sincronizar o reintentar y ofrece las revisiones de OCR ya generadas. El reintento manual reinicia el contador y limpia el retroceso. Las operaciones se envían con la sesión del usuario y las validaciones del servidor.
+- **S-03 (Last-Write-Wins) aún no está implementado de extremo a extremo.** No existe en el esquema remoto verificado una columna de versión/actualización por acta que permita comparar la modificación local contra la remota sin inventar contratos. Se propone una migración en la sección 7; mientras tanto, una edición concurrente puede sobrescribir otra.
 
-**Estado de F09:** implementado e integrado con F05–F08 y F10. Pendiente probar cortes de red reales, reinicios de la aplicación y reintentos en Android.
+**Estado de F09:** integrado con F05–F08 y F10 para idempotencia, orden por dependencias, backoff y propiedad de la operación. Pendiente S-03 en backend y pruebas de cortes de red reales, reinicios y reintentos en Android.
 
-**Verificación:** ESLint y TypeScript limitado a `src/` pasaron; 18 pruebas unitarias dirigidas pasaron; Expo Doctor aprobó 20/20 comprobaciones y el bundle Android se exportó. No se simuló aún un ciclo completo offline → online en dispositivo.
+**Verificación:** ESLint y TypeScript limitado a `src/` pasaron; 30 pruebas unitarias pasaron; Expo Doctor aprobó 20/20 comprobaciones y el bundle Android se exportó. No se simuló aún un ciclo completo offline → online en dispositivo.
 
 ### F10 — Paneles y resultados
 
@@ -261,12 +263,13 @@ Los datos mostrados deben respetar los permisos de acceso.
 
 #### Implementación completada
 
-- `DashboardScreen` consulta `SupabaseDashboardRepository`, que filtra por asignaciones vigentes del veedor, recinto del coordinador de recinto o provincia del coordinador provincial. Muestra avance por recinto, actas recientes, resultados por dignidad, evidencias, correcciones y Exit Poll, sin consultas directas desde la interfaz.
+- `DashboardScreen` consulta `SupabaseDashboardRepository`, que filtra por asignaciones vigentes del veedor, recinto del coordinador de recinto o provincia del coordinador provincial. Si falta la relación territorial, el filtro provincial no abre el acceso a todas las mesas. Muestra avance por recinto, actas recientes, resultados por dignidad, evidencias, correcciones y Exit Poll, sin consultas directas desde la interfaz.
+- Los agregados oficiales (votos, avance por mesa y actas recientes) incluyen únicamente actas con estado `aprobada`. Las actas `pendiente_revision` se contabilizan por separado en `pendingActs` y no afectan resultados.
 - El Exit Poll se registra mediante la Edge Function `registrar-encuesta`, desplegada en remoto, que valida sesión, rol de coordinador, jurisdicción de la mesa, dignidad y candidatura. Sin conexión, la respuesta se encola y se sincroniza después.
 - Las advertencias GPS son heurísticas (centroide de evidencias, umbral de 1.000 m) y no bloquean registros, de acuerdo con S-02.
 - La corrección de actas se abre desde las actas recientes para veedor y coordinador de recinto, reutilizando F07.
 
-**Estado de F10:** panel por rol y Exit Poll integrados con persistencia real. Pendiente validar agregaciones y permisos con cuentas autorizadas y datos electorales de prueba.
+**Estado de F10:** panel por rol y Exit Poll integrados con persistencia real; los resultados ya no incluyen actas no aprobadas. Pendiente validar agregaciones y permisos con cuentas autorizadas y datos electorales de prueba.
 
 **Verificación:** ESLint y TypeScript limitado a `src/` pasaron; Expo Doctor aprobó 20/20 comprobaciones y el bundle Android se exportó. La función `registrar-encuesta` aparece `ACTIVE` en remoto. No se consultaron resultados reales desde un dispositivo.
 
@@ -283,12 +286,13 @@ Se utiliza Firebase Crashlytics para facilitar el seguimiento y análisis de pro
 - `firebase.json` desactiva la generación automática de eventos fatales de JS de Crashlytics (`crashlytics_is_error_generation_on_js_crash_enabled: false`) y mantiene el encadenamiento (`crashlytics_javascript_exception_handler_chaining_enabled: true`). Así se conserva el único manejador global de `App.tsx`, se preserva el comportamiento fatal de React Native y no se duplican reportes. `App.tsx` no fue modificado en esta entrega.
 - `FirebaseCrashlyticsErrorReporter` sustituye al reportero local en el cableado de `src/store/store.ts`. Primero persiste el evento con `SQLiteErrorReporter` y después envía a Crashlytics los atributos `screen`, `operation`, versión de Android, modelo de dispositivo y detalles primitivos filtrados. No envía identificadores de usuario, correos, contraseñas, tokens ni claves. Los fallos de Crashlytics no interrumpen la aplicación ni borran el registro local.
 - Crashlytics captura automáticamente los críticos nativos; los errores manejados y el manejador global existente se envían como eventos no fatales con traza JS mediante `recordError`. La recolección permanece desactivada en compilaciones de depuración, según la configuración predeterminada del SDK.
+- `flush()` solicita a Crashlytics el envío de informes no enviados al recuperar la conexión y marca como entregados los registros SQLite locales. Si Crashlytics no está disponible (Expo Go, web o compilación sin módulo nativo), los registros permanecen pendientes y se reintentan en el próximo evento de red. Crashlytics no expone confirmación de entrega por evento, por lo que "sent=1" significa "entregado al SDK", no "recibido por Firebase Console".
 - No se agregó un segundo manejador global, no se expusieron secretos en el cliente y no se modificaron otras funcionalidades.
 - `google-services.json` está presente en la raíz. Su JSON es válido, contiene un único cliente Android, el paquete `com.controlelectoral.app`, `mobilesdk_app_id`, clave de cliente, `project_id`, `project_number` y `storage_bucket`. La ausencia de `api_key` en la raíz y de `firebase_url` es normal en este formato cuando no se usan esas secciones. No se imprimieron ni copiaron valores sensibles.
 - Se ejecutó `npx expo prebuild --platform android --no-install` solo como verificación: aplicó los plugins, generó `namespace`/`applicationId` `com.controlelectoral.app`, `minSdkVersion=24`, `newArchEnabled=true`, las dependencias Gradle de Google Services y Crashlytics, y copió `google-services.json` a `android/app/`. La carpeta nativa generada se eliminó posteriormente para conservar el repositorio como estaba.
 - `eas.json` define el perfil `preview` con `android.buildType: "apk"`, además del perfil `production` predeterminado. No se ejecutó EAS Build ni se generó el APK.
 
-**Estado de F11:** integración y configuración local completadas conforme a ADR-06. La asociación remota del archivo con Firebase Console fue informada por el usuario, pero no se verificó de forma independiente desde este entorno.
+**Estado de F11:** integración y configuración local completadas conforme a ADR-06, con vaciado de reportes al recuperar red. La asociación remota del archivo con Firebase Console fue informada por el usuario, pero no se verificó de forma independiente desde este entorno.
 
 **Requisitos para generar y probar el APK:**
 1. Confirmar en Firebase Console que Crashlytics está habilitado para el proyecto asociado a `google-services.json`.
@@ -330,4 +334,56 @@ No se deben utilizar candidatos u organizaciones ficticias como información ele
 - Decisiones arquitectónicas: `../adr/`
 - Arquitectura: `../architecture/architecture.md`
 - Skill FDD: `.github/skills/fdd/SKILL.md`
+
+## 7. Corrección integral F01–F11 y estado final de verificación
+
+Esta sección registra la ronda de correcciones posteriores a la auditoría. Ninguna funcionalidad se marca como **APROBADO** sin prueba en dispositivo con una cuenta autorizada.
+
+### 7.1 Matriz final
+
+| Feature | Corrección aplicada en esta ronda | Archivos principales | Prueba ejecutada | Estado |
+|---|---|---|---|---|
+| F01 | Sin cambios funcionales nuevos. Se documenta RF-03 como no implementado. | `auth-repository.ts`, `auth-context.tsx` | TypeScript y ESLint de `src/` | Implementado parcialmente; pendiente de cuenta autorizada y cambio obligatorio de clave |
+| F02 | Sin cambios funcionales nuevos. Territorio sigue dependiente de red. | `supabase-territory-repository.ts`, `territory-screen.tsx` | TypeScript y ESLint | Parcial; pendiente caché offline y verificación remota |
+| F03 | `config.jsonc` ahora declara las seis Edge Functions (antes solo tres). | `supabase/config.jsonc` | `npx supabase config validate` | Configuración local válida; HTTP 500 sin reproducir, sin logs remotos |
+| F04 | S-04: el nuevo veedor hereda acceso por asignación vigente; `registered_by` se conserva. Además, `config.jsonc` declara las seis funciones. | `gestionar-personal/index.ts`, `confirmar-resultados/index.ts`, `config.jsonc` | Pruebas de dominio S-04, config validate, TypeScript/ESLint | Corregido localmente; pendiente reproducir 500 y validar invitaciones/JWKS |
+| F05 | Regla S-01 confirmada y conservada: suma exacta de candidatos + blancos + nulos. | `validate-electoral-act-arithmetic.ts`, `registrar_acta_electoral.sql` | 12 pruebas de dominio de actas | Lógica verificada por pruebas; pendiente prueba en dispositivo |
+| F06 | Cada captura guarda `actId`; la pantalla filtra por acta y elimina `captures[0]`. | `evidence.ts`, `capture-evidence.ts`, `evidence-slice.ts`, `evidence-capture-screen.tsx` | Prueba de pertenencia por acta + TypeScript/ESLint | Corregido localmente; pendiente cámara/GPS reales y advertencia S-02 |
+| F07 | La propuesta ya no se envía al prepararla; exige confirmación humana explícita. El corrector puede ser el veedor asignado aunque no sea el autor (S-04). | `confirm-correction.ts`, `electoral-act.ts`, `act-correction-screen.tsx`, `confirmar-resultados/index.ts` | Pruebas del mapeador y de autorización + TypeScript/ESLint | Corregido localmente; aprobador formal pendiente de definición |
+| F08 | Resultado OCR cacheado en `local_state` para evitar llamadas repetidas a Gemini. | `act-ocr-slice.ts`, `sync-worker.ts` | Pruebas del worker + TypeScript/ESLint | Corregido localmente; OCR real pendiente de documento autorizado |
+| F09 | Worker de dos fases, idempotencia, backoff acotado, límite de intentos y propietario de la operación. Reintento manual reinicia contador. | `sync-worker.ts`, `offline-slice.ts`, `store.ts`, slices que encolan | 6 pruebas del worker | Corregido localmente; **S-03 sigue pendiente en backend** |
+| F10 | Agregados solo con actas `aprobada`; `pendingActs` separado; filtro provincial fail-closed. | `act-approval.ts`, `territory-access.ts`, `supabase-dashboard-repository.ts` | 3 pruebas de dominio + TypeScript/ESLint | Corregido localmente; pendiente validación con datos autorizados |
+| F11 | `flush()` envía informes pendientes de Crashlytics al recuperar red; registros SQLite se marcan entregados. Sin segundo handler global. | `error-reporter.ts`, `sqlite-error-reporter.ts`, `firebase-crashlytics-error-reporter.ts`, `app-navigator.tsx` | TypeScript/ESLint + export Android | Corregido localmente; pendiente evento real en build release |
+
+### 7.2 Verificación ejecutada en esta ronda
+
+- `node --test src/**/*.test.mjs`: **31/31 pruebas pasaron** (18 preexistentes + 13 nuevas).
+- `npx tsc --noEmit -p tsconfig.check.json` (configuración temporal que incluye solo `src/`): pasó sin errores.
+- `npx expo lint`: pasó sin errores. Se corrigió el error preexistente de `src/hooks/use-color-scheme.web.ts` usando `useSyncExternalStore` en lugar de `setState` dentro de un efecto.
+- `npx expo-doctor`: 20/20 comprobaciones.
+- `npx expo export --platform android`: bundle generado correctamente.
+- `npx supabase config validate`: configuración JSONC válida, sin errores ni advertencias.
+- Verificación remota de solo lectura con la clave anónima: todas las tablas y RPC consultadas respondieron `401` por RLS. **No fue posible confirmar columnas, relaciones ni existencia de RPC sin una sesión autorizada**. No se imprimieron credenciales ni se modificó datos remotos.
+
+### 7.3 Decisiones pendientes y migraciones propuestas (NO aplicadas)
+
+1. **S-03 Last-Write-Wins (bloquea F09/F07):** se propone añadir `updated_at TIMESTAMPTZ` y `version INTEGER` a `electoral_acts`, enviar `expectedUpdatedAt` desde el cliente a `confirmar-resultados` y aplicar la escritura solo si la versión local es la más reciente. Impacto: nueva columna, backfill, cambio de contrato de la Edge Function y del cliente. Requiere aprobación y migración; **no se implementó**.
+2. **RF-03 cambio obligatorio de clave (bloquea F01):** se propone `must_change_password BOOLEAN NOT NULL DEFAULT false` en `profiles`, marcarlo al crear cuentas en `gestionar-personal` y forzar la pantalla de cambio tras el primer inicio de sesión. Requiere migración y definición de quién marca la clave como temporal; **no se implementó**.
+3. **S-02 advertencia GPS (bloquea F06):** se propone almacenar `latitude`/`longitude` en `polling_places` y comparar la captura con el recinto asignado, mostrando advertencia sin bloquear. No existe coordenada verificada en el esquema; **no se implementó**.
+4. **ADR-05 WebView y mapas (bloquea F06/F10):** `react-native-webview` no está instalado y no hay provider de mapas definido. Requiere aprobación para instalar la dependencia y documentar el proveedor; **no se implementó**.
+5. **F02 offline:** hace falta una decisión sobre qué catálogos territoriales se cachean en SQLite y por cuánto tiempo; **no se implementó**.
+6. **F03/F04 HTTP 500:** hacen falta logs de la Edge Function, el cuerpo/headers reales de la respuesta y una cuenta autorizada para comprobar JWKS, `is_active_user()`, `get_my_role()` y el uso de `SUPABASE_SERVICE_ROLE_KEY` frente a secretos nuevos. La declaración de funciones en `config.jsonc` está corregida, pero **no se desplegó**.
+
+### 7.4 Pruebas manuales pendientes en dispositivo
+
+1. F01: iniciar sesión con cada rol, cerrar sesión, recuperar clave y verificar acceso por rol/territorio.
+2. F02/F03: consultar territorio, crear un recinto y comprobar que aparece en la jerarquía.
+3. F04/F07: crear coordinador de recinto y veedor, reemplazar un veedor conservando sus actas (S-04); verificar que el nuevo veedor puede abrir, confirmar el OCR y corregir las actas de la mesa heredada, y que `registered_by` sigue siendo el autor original.
+4. F05/F06/F08: tomar fotografía real, verificar nitidez/GPS, ejecutar OCR con documento ficticio autorizado y revisar valores antes de confirmar.
+5. F07: preparar una corrección, comprobar que no se envía hasta el botón explícito y revisar el historial.
+6. F09: registrar acta sin red, cerrar y abrir la app, recuperar conexión, verificar dos fases, reintento y ausencia de duplicados; simular cambio de cuenta con operaciones pendientes.
+7. F10: validar que un acta `pendiente_revision` no altere resultados y que un provincial no vea mesas de otra provincia.
+8. F11: instalar build release, generar error y confirmar recepción en Firebase Crashlytics Console.
+
+**No se ejecutaron** EAS Build, despliegue de Edge Functions, migraciones SQL, commits, push ni generación de APK. Tampoco se afirmó pruebas remotas o en dispositivo que no se realizaron.
 

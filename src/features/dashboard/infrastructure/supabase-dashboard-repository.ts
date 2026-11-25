@@ -1,5 +1,10 @@
 import { userRoles, type UserProfile } from '@/features/auth/domain/user-profile';
 import { supabase } from '@/features/auth/infrastructure/supabase-client';
+import {
+  isApprovedActStatus,
+  PENDING_REVIEW_ACT_STATUS,
+} from '@/features/dashboard/domain/act-approval';
+import { tableBelongsToProvince } from '@/features/dashboard/domain/territory-access';
 import type {
   DashboardCandidateResult,
   DashboardExitPollSummary,
@@ -183,11 +188,7 @@ export class SupabaseDashboardRepository implements DashboardRepository {
       }
     } else {
       for (const table of allTables) {
-        const canton = table.polling_places?.parishes?.cantons ?? null;
-        if (
-          canton === null ||
-          canton.province_id === this.profile.provinceId
-        ) {
+        if (tableBelongsToProvince(table, this.profile.provinceId)) {
           allowedTableIds.add(numberId(table.id));
         }
       }
@@ -199,9 +200,11 @@ export class SupabaseDashboardRepository implements DashboardRepository {
     }
 
     const allActs = (actsResult.data ?? []) as unknown as ActRow[];
-    const acts = allActs.filter((act) =>
+    const inScopeActs = allActs.filter((act) =>
       allowedTableIds.has(numberId(act.electoral_table_id)),
     );
+    // Los agregados oficiales excluyen borradores y actas pendientes de revisión.
+    const acts = inScopeActs.filter((act) => isApprovedActStatus(act.status));
     const actIds = new Set(acts.map((act) => numberId(act.id)));
     const positions = (positionsResult.data ?? []) as unknown as PositionRow[];
     const positionById = new Map(
@@ -469,8 +472,10 @@ export class SupabaseDashboardRepository implements DashboardRepository {
       generatedAt: new Date().toISOString(),
       totalTables: allowedTableIds.size,
       reportedTables: reportedTableIds.size,
-      pendingActs: acts.filter((act) => act.status === 'pendiente_revision').length,
-      approvedActs: acts.filter((act) => act.status === 'aprobada').length,
+      pendingActs: inScopeActs.filter(
+        (act) => act.status === PENDING_REVIEW_ACT_STATUS,
+      ).length,
+      approvedActs: acts.length,
       evidenceCount: evidence.filter((item) => actIds.has(numberId(item.act_id))).length,
       correctionsCount: corrections.filter((item) => actIds.has(numberId(item.act_id))).length,
       positions: [...positionSummaries.values()],

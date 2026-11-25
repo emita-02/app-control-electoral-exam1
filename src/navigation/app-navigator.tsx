@@ -141,6 +141,7 @@ function useOfflineBootstrap(authenticated: boolean) {
       void dispatch(loadOfflineOperations());
       if (online) {
         void dispatch(syncOfflineOperations());
+        void appDependencies.errorReporter.flush?.();
       }
     };
     void refresh();
@@ -149,6 +150,7 @@ function useOfflineBootstrap(authenticated: boolean) {
       dispatch(setOnline(online));
       if (online) {
         void dispatch(syncOfflineOperations());
+        void appDependencies.errorReporter.flush?.();
       }
     });
 

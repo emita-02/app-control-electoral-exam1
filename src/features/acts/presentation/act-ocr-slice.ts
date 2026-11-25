@@ -31,8 +31,22 @@ export const requestActOcr = createAsyncThunk<
   { extra: ActOcrThunkDependencies }
 >(
   'acts/processOcr',
-  async (input, { extra, signal }) =>
-    processActOcrUseCase(extra.actOcrRepository, input, signal),
+  async (input, { extra, signal }) => {
+    // La evidencia es inmutable: reutilizar el OCR ya obtenido evita llamadas
+    // repetidas a Gemini. La revisión humana sigue siendo obligatoria (S-06).
+    const cached = extra.queue.getState(`ocr_result.${input.evidenceId}`);
+    if (cached) {
+      try {
+        const parsed: unknown = JSON.parse(cached);
+        if (isOcrResult(parsed, input)) {
+          return parsed;
+        }
+      } catch {
+        // Un valor dañado se ignora y se vuelve a procesar con Gemini.
+      }
+    }
+    return processActOcrUseCase(extra.actOcrRepository, input, signal);
+  },
 );
 
 function isOcrResult(value: unknown, request: ActOcrRequest): value is ActOcrResult {

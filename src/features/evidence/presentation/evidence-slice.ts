@@ -67,12 +67,16 @@ export const uploadEvidenceForAct = createAsyncThunk<
   UploadEvidenceInput,
   { extra: EvidenceThunkDependencies }
 >('evidence/uploadForAct', async (input, { extra }) => {
+  if (!Number.isSafeInteger(input.actId) || input.actId <= 0) {
+    throw new Error('La fotografía no tiene un acta válida asociada.');
+  }
   if (!(await extra.networkStatus.isOnline())) {
     const localEvidenceId = -Date.now();
     extra.queue.enqueue({
       type: 'upload_evidence',
       payload: {
         __localEvidenceId: localEvidenceId,
+        __ownerId: input.userId,
         localActId: input.actId,
         localUri: input.localUri,
         capturedAt: input.capturedAt,

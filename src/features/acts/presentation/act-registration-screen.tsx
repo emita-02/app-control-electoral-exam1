@@ -1,32 +1,36 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
-import { Controller, useForm, useWatch } from 'react-hook-form';
-import { Pressable, Text, View } from 'react-native';
-import { z } from 'zod';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { zodResolver } from "@hookform/resolvers/zod";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useEffect } from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
+import { Pressable, Text, View } from "react-native";
+import { z } from "zod";
 
 import {
+  type ElectoralActFormInput,
+  validateElectoralActForm,
+} from "@/features/acts/domain/electoral-act";
+import {
+  clearActRegistrationError,
+  clearSavedAct,
+  loadActRegistrationCatalog,
+  submitElectoralAct,
+} from "@/features/acts/presentation/act-registration-slice";
+import { ActValidationFeedback } from "@/features/acts/presentation/components/act-validation-feedback";
+import { userRoles } from "@/features/auth/domain/user-profile";
+import {
+  AppShell,
   AuthField,
   AuthHeading,
   AuthNotice,
   AuthShell,
   LoadingScreen,
   PrimaryButton,
-} from '@/features/auth/presentation/components/auth-ui';
-import { userRoles } from '@/features/auth/domain/user-profile';
-import {
-  type ElectoralActFormInput,
-  validateElectoralActForm,
-} from '@/features/acts/domain/electoral-act';
-import {
-  clearActRegistrationError,
-  clearSavedAct,
-  loadActRegistrationCatalog,
-  submitElectoralAct,
-} from '@/features/acts/presentation/act-registration-slice';
-import { ActValidationFeedback } from '@/features/acts/presentation/components/act-validation-feedback';
-import type { WorkspaceStackParamList } from '@/navigation/types';
-import { useAppDispatch, useAppSelector } from '@/store/store';
+  RoleHeader,
+  StatusBadge,
+} from "@/features/auth/presentation/components/auth-ui";
+import { LottieAnimation } from "@/features/auth/presentation/components/lottie-animation";
+import type { WorkspaceStackParamList } from "@/navigation/types";
+import { useAppDispatch, useAppSelector } from "@/store/store";
 
 const registrationSchema = z
   .object({
@@ -41,21 +45,22 @@ const registrationSchema = z
   .superRefine((values, context) => {
     if (!values.electoralTableId) {
       context.addIssue({
-        code: 'custom',
-        path: ['electoralTableId'],
-        message: 'Selecciona una mesa electoral.',
+        code: "custom",
+        path: ["electoralTableId"],
+        message: "Selecciona una mesa electoral.",
       });
     }
     if (!values.positionId) {
       context.addIssue({
-        code: 'custom',
-        path: ['positionId'],
-        message: 'Selecciona una dignidad electoral.',
+        code: "custom",
+        path: ["positionId"],
+        message: "Selecciona una dignidad electoral.",
       });
     }
-    for (const issue of validateElectoralActForm(toActFormInput(values)).issues) {
+    for (const issue of validateElectoralActForm(toActFormInput(values))
+      .issues) {
       context.addIssue({
-        code: 'custom',
+        code: "custom",
         path: issue.path,
         message: issue.message,
       });
@@ -65,17 +70,17 @@ const registrationSchema = z
 type RegistrationFormValues = z.input<typeof registrationSchema>;
 type ScreenProps = NativeStackScreenProps<
   WorkspaceStackParamList,
-  'ActRegistration'
+  "ActRegistration"
 >;
 
 const emptyFormValues: RegistrationFormValues = {
-  electoralTableId: '',
-  positionId: '',
+  electoralTableId: "",
+  positionId: "",
   candidateVotes: [],
-  blankVotes: '',
-  nullVotes: '',
-  totalVotes: '',
-  observations: '',
+  blankVotes: "",
+  nullVotes: "",
+  totalVotes: "",
+  observations: "",
 };
 
 function toVote(value: string): number | null {
@@ -90,7 +95,11 @@ function toVote(value: string): number | null {
 function toActFormInput(
   values: Pick<
     RegistrationFormValues,
-    'candidateVotes' | 'blankVotes' | 'nullVotes' | 'totalVotes' | 'observations'
+    | "candidateVotes"
+    | "blankVotes"
+    | "nullVotes"
+    | "totalVotes"
+    | "observations"
   >,
 ): ElectoralActFormInput {
   return {
@@ -117,18 +126,34 @@ function SelectableOption({
     <Pressable
       accessibilityRole="radio"
       accessibilityState={{ selected }}
-      className={`rounded-xl border p-4 ${
+      className={`flex-row items-center justify-between rounded-2xl border-2 p-4 ${
         selected
-          ? 'border-electoral-cyan bg-electoral-cyan-light'
-          : 'border-electoral-border bg-white'
+          ? "border-electoral-cyan bg-electoral-cyan-light"
+          : "border-electoral-border bg-white"
       }`}
-      onPress={onPress}>
-      <Text className="text-base font-bold text-electoral-navy">{label}</Text>
-      {description ? (
-        <Text className="mt-1 text-sm leading-5 text-electoral-muted">
-          {description}
+      onPress={onPress}
+    >
+      <View className="flex-1 pr-3">
+        <Text className="text-base font-extrabold text-electoral-navy">
+          {label}
         </Text>
-      ) : null}
+        {description ? (
+          <Text className="mt-0.5 text-xs leading-4 text-electoral-muted">
+            {description}
+          </Text>
+        ) : null}
+      </View>
+      <View
+        className={`h-6 w-6 items-center justify-center rounded-full border-2 ${
+          selected
+            ? "border-electoral-cyan bg-electoral-cyan"
+            : "border-electoral-border bg-white"
+        }`}
+      >
+        {selected ? (
+          <View className="h-2.5 w-2.5 rounded-full bg-white" />
+        ) : null}
+      </View>
     </Pressable>
   );
 }
@@ -154,10 +179,10 @@ export function ActRegistrationScreen({ navigation }: ScreenProps) {
   } = useForm<RegistrationFormValues>({
     resolver: zodResolver(registrationSchema),
     defaultValues: emptyFormValues,
-    mode: 'onChange',
+    mode: "onChange",
   });
   const watchedValues = useWatch({ control }) as RegistrationFormValues;
-  const selectedPositionId = watchedValues.positionId ?? '';
+  const selectedPositionId = watchedValues.positionId ?? "";
   const selectedCandidates =
     catalog?.candidates.filter(
       (candidate) => String(candidate.positionId) === selectedPositionId,
@@ -194,11 +219,13 @@ export function ActRegistrationScreen({ navigation }: ScreenProps) {
     );
   }
 
-  if (catalogStatus === 'idle' || catalogStatus === 'loading') {
-    return <LoadingScreen message="Cargando mesas, dignidades y candidaturas…" />;
+  if (catalogStatus === "idle" || catalogStatus === "loading") {
+    return (
+      <LoadingScreen message="Cargando mesas, dignidades y candidaturas…" />
+    );
   }
 
-  if (catalogStatus === 'failed') {
+  if (catalogStatus === "failed") {
     return (
       <AuthShell>
         <AuthHeading
@@ -208,7 +235,7 @@ export function ActRegistrationScreen({ navigation }: ScreenProps) {
         <AuthNotice
           message={
             catalogError ??
-            'No se pudo cargar la información necesaria para registrar actas.'
+            "No se pudo cargar la información necesaria para registrar actas."
           }
         />
         <PrimaryButton
@@ -218,7 +245,11 @@ export function ActRegistrationScreen({ navigation }: ScreenProps) {
             void dispatch(loadActRegistrationCatalog(profile.id));
           }}
         />
-        <PrimaryButton label="Volver" onPress={() => navigation.goBack()} />
+        <PrimaryButton
+          label="Volver"
+          variant="secondary"
+          onPress={() => navigation.goBack()}
+        />
       </AuthShell>
     );
   }
@@ -245,16 +276,16 @@ export function ActRegistrationScreen({ navigation }: ScreenProps) {
     const candidates = catalog.candidates.filter(
       (candidate) => String(candidate.positionId) === positionId,
     );
-    setValue('positionId', positionId, {
+    setValue("positionId", positionId, {
       shouldValidate: true,
       shouldDirty: true,
     });
     setValue(
-      'candidateVotes',
-      candidates.map(() => ''),
+      "candidateVotes",
+      candidates.map(() => ""),
       { shouldValidate: true, shouldDirty: true },
     );
-    if (saveStatus === 'failed' || saveStatus === 'succeeded') {
+    if (saveStatus === "failed" || saveStatus === "succeeded") {
       dispatch(clearSavedAct());
     }
   };
@@ -284,87 +315,114 @@ export function ActRegistrationScreen({ navigation }: ScreenProps) {
     }
   };
 
-  if (saveStatus === 'succeeded' && savedAct) {
+  if (saveStatus === "succeeded" && savedAct) {
     return (
-      <AuthShell>
-        <AuthHeading
-          title="Acta registrada"
-          description={
-            savedOffline
-              ? 'El acta quedó guardada en el dispositivo y se enviará al recuperar la conexión.'
-              : 'El acta quedó guardada y pendiente de revisión.'
-          }
+      <AppShell
+        header={
+          <RoleHeader
+            badge="Acta Guardada"
+            title="Registro completado"
+            subtitle={`Mesa ${savedAct.electoralTableId} · Acta #${savedAct.id}`}
+            onBack={() => navigation.goBack()}
+          />
+        }
+      >
+        <LottieAnimation
+          loop={false}
+          size={92}
+          source={require("../../../../assets/lottie/success-check.json")}
         />
         <AuthNotice
           success={!savedOffline}
-          message={`Acta ${savedAct.id} registrada para la mesa ${savedAct.electoralTableId}. Estado: ${savedAct.status}.`}
+          message={
+            savedOffline
+              ? `Acta ${savedAct.id} guardada localmente sin conexión. Se sincronizará automáticamente al recuperar señal.`
+              : `Acta ${savedAct.id} registrada para la mesa ${savedAct.electoralTableId}. Estado: ${savedAct.status}.`
+          }
         />
         <PrimaryButton
-          label="Continuar con la evidencia"
-          onPress={() => navigation.navigate('EvidenceCapture', { actId: savedAct.id })}
+          label="Continuar con la evidencia fotográfica →"
+          onPress={() =>
+            navigation.navigate("EvidenceCapture", { actId: savedAct.id })
+          }
         />
         {savedOffline ? (
           <PrimaryButton
             label="Ver registros pendientes"
-            onPress={() => navigation.navigate('OfflineHistory')}
+            variant="navy"
+            onPress={() => navigation.navigate("OfflineHistory")}
           />
         ) : null}
         <PrimaryButton
           label="Registrar otra acta"
+          variant="secondary"
           onPress={() => {
             dispatch(clearSavedAct());
             reset(emptyFormValues);
           }}
         />
-        <PrimaryButton label="Volver" onPress={() => navigation.goBack()} />
-      </AuthShell>
+      </AppShell>
     );
   }
 
   return (
-    <AuthShell>
-      <Pressable
-        accessibilityRole="button"
-        className="min-h-11 justify-center"
-        onPress={() => navigation.goBack()}>
-        <Text className="text-base font-semibold text-electoral-navy">Volver</Text>
-      </Pressable>
-      <AuthHeading
-        title="Registrar acta electoral"
-        description="Selecciona la mesa y la dignidad, ingresa los votos y verifica que la suma coincida con el total."
+    <AppShell
+      header={
+        <RoleHeader
+          badge="Veedor · Escrutinio"
+          title="Registrar acta electoral"
+          subtitle="Selecciona mesa, dignidad e ingresa los votos del acta física."
+          onBack={() => navigation.goBack()}
+        />
+      }
+    >
+      <AuthNotice
+        success
+        message="Solo puedes registrar actas de tus mesas asignadas. La suma se verifica automáticamente."
       />
-      <AuthNotice message="Solo puedes registrar actas de las mesas que tienes asignadas. El registro queda pendiente de revisión." />
 
-      <View className="gap-3">
-        <Text className="text-sm font-bold text-electoral-navy">Mesa electoral</Text>
+      {/* Paso 1: Mesa */}
+      <View className="gap-3 rounded-2xl border border-electoral-border bg-white p-5 shadow-xs">
+        <View className="flex-row items-center justify-between">
+          <Text className="text-base font-extrabold text-electoral-navy">
+            1. Mesa electoral
+          </Text>
+          <StatusBadge
+            label={`${catalog.tables.length} asignada(s)`}
+            tone="cyan"
+          />
+        </View>
         {catalog.tables.map((table) => (
           <SelectableOption
             key={table.id}
-            label={`Mesa ${table.tableNumber}`}
+            label={`Mesa / JRV ${table.tableNumber}`}
             description={`${table.pollingPlaceName}${
-              table.pollingPlaceCode ? ` · ${table.pollingPlaceCode}` : ''
+              table.pollingPlaceCode ? ` · ${table.pollingPlaceCode}` : ""
             }`}
             selected={watchedValues.electoralTableId === String(table.id)}
             onPress={() => {
-              setValue('electoralTableId', String(table.id), {
+              setValue("electoralTableId", String(table.id), {
                 shouldValidate: true,
                 shouldDirty: true,
               });
-              if (saveStatus === 'failed') {
+              if (saveStatus === "failed") {
                 dispatch(clearSavedAct());
               }
             }}
           />
         ))}
         {errors.electoralTableId ? (
-          <Text className="text-sm text-electoral-red">
-            {errors.electoralTableId.message}
+          <Text className="text-xs font-semibold text-electoral-red">
+            ⚠ {errors.electoralTableId.message}
           </Text>
         ) : null}
       </View>
 
-      <View className="gap-3">
-        <Text className="text-sm font-bold text-electoral-navy">Dignidad</Text>
+      {/* Paso 2: Dignidad */}
+      <View className="gap-3 rounded-2xl border border-electoral-border bg-white p-5 shadow-xs">
+        <Text className="text-base font-extrabold text-electoral-navy">
+          2. Dignidad electoral
+        </Text>
         {catalog.positions.map((position) => (
           <SelectableOption
             key={position.id}
@@ -374,109 +432,126 @@ export function ActRegistrationScreen({ navigation }: ScreenProps) {
           />
         ))}
         {errors.positionId ? (
-          <Text className="text-sm text-electoral-red">
-            {errors.positionId.message}
+          <Text className="text-xs font-semibold text-electoral-red">
+            ⚠ {errors.positionId.message}
           </Text>
         ) : null}
       </View>
 
+      {/* Paso 3: Votos */}
       {selectedPositionId ? (
-        <View className="gap-4">
-          <Text className="text-lg font-bold text-electoral-navy">
-            Votos por candidatura
-          </Text>
+        <View className="gap-4 rounded-2xl border border-electoral-border bg-white p-5 shadow-xs">
+          <View className="flex-row items-center justify-between border-b border-electoral-border pb-3">
+            <Text className="text-base font-extrabold text-electoral-navy">
+              3. Votos por candidatura
+            </Text>
+            <StatusBadge
+              label={`${selectedCandidates.length} listas`}
+              tone="navy"
+            />
+          </View>
+
           {selectedCandidates.map((candidate, index) => (
             <Controller
               key={candidate.id}
               control={control}
               name={`candidateVotes.${index}`}
               render={({ field, fieldState }) => (
-                <View className="gap-1">
+                <View className="gap-1.5 rounded-xl bg-electoral-background/70 p-3.5">
+                  <Text className="text-xs font-extrabold uppercase tracking-wide text-electoral-cyan">
+                    {candidate.organizationName}
+                  </Text>
                   <AuthField
-                    label={`Votos para ${candidate.fullName}`}
-                    value={field.value ?? ''}
+                    label={candidate.fullName}
+                    value={field.value ?? ""}
                     onBlur={field.onBlur}
                     onChangeText={field.onChange}
                     error={fieldState.error?.message}
                     keyboardType="number-pad"
+                    placeholder="0"
                   />
-                  <Text className="text-sm text-electoral-muted">
-                    {candidate.organizationName}
-                  </Text>
                 </View>
               )}
             />
           ))}
 
-          <Controller
-            control={control}
-            name="blankVotes"
-            render={({ field, fieldState }) => (
-              <AuthField
-                label="Votos en blanco"
-                value={field.value ?? ''}
-                onBlur={field.onBlur}
-                onChangeText={field.onChange}
-                error={fieldState.error?.message}
-                keyboardType="number-pad"
-              />
-            )}
-          />
-          <Controller
-            control={control}
-            name="nullVotes"
-            render={({ field, fieldState }) => (
-              <AuthField
-                label="Votos nulos"
-                value={field.value ?? ''}
-                onBlur={field.onBlur}
-                onChangeText={field.onChange}
-                error={fieldState.error?.message}
-                keyboardType="number-pad"
-              />
-            )}
-          />
-          <Controller
-            control={control}
-            name="totalVotes"
-            render={({ field, fieldState }) => (
-              <AuthField
-                label="Total de sufragantes"
-                value={field.value ?? ''}
-                onBlur={field.onBlur}
-                onChangeText={field.onChange}
-                error={fieldState.error?.message}
-                keyboardType="number-pad"
-              />
-            )}
-          />
-          <Controller
-            control={control}
-            name="observations"
-            render={({ field }) => (
-              <AuthField
-                label="Observaciones"
-                value={field.value ?? ''}
-                onBlur={field.onBlur}
-                onChangeText={field.onChange}
-                multiline
-                className="min-h-24 py-3"
-              />
-            )}
-          />
+          <View className="mt-2 gap-4 border-t border-electoral-border pt-4">
+            <Text className="text-base font-extrabold text-electoral-navy">
+              4. Totales del acta
+            </Text>
+            <Controller
+              control={control}
+              name="blankVotes"
+              render={({ field, fieldState }) => (
+                <AuthField
+                  label="Votos en blanco"
+                  value={field.value ?? ""}
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  error={fieldState.error?.message}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                />
+              )}
+            />
+            <Controller
+              control={control}
+              name="nullVotes"
+              render={({ field, fieldState }) => (
+                <AuthField
+                  label="Votos nulos"
+                  value={field.value ?? ""}
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  error={fieldState.error?.message}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                />
+              )}
+            />
+            <Controller
+              control={control}
+              name="totalVotes"
+              render={({ field, fieldState }) => (
+                <AuthField
+                  label="Total de sufragantes"
+                  value={field.value ?? ""}
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  error={fieldState.error?.message}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                />
+              )}
+            />
+            <Controller
+              control={control}
+              name="observations"
+              render={({ field }) => (
+                <AuthField
+                  label="Observaciones (opcional)"
+                  value={field.value ?? ""}
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  multiline
+                  className="min-h-24 py-3"
+                />
+              )}
+            />
+          </View>
 
           <ActValidationFeedback validation={validation} />
           {saveError ? <AuthNotice message={saveError} /> : null}
           <PrimaryButton
-            label="Guardar acta"
-            loading={saveStatus === 'loading'}
-            disabled={!validation.isValid || saveStatus === 'loading'}
+            label="Guardar y validar acta"
+            loading={saveStatus === "loading"}
+            disabled={!validation.isValid || saveStatus === "loading"}
             onPress={() => void handleSubmit(submit)()}
           />
         </View>
       ) : (
-        <AuthNotice message="Selecciona una dignidad para ingresar los votos del acta." />
+        <AuthNotice message="Selecciona una dignidad arriba para desplegar la papeleta de votación." />
       )}
-    </AuthShell>
+    </AppShell>
   );
 }

@@ -7,4 +7,6 @@ export type ErrorReportContext = {
 export interface ErrorReporter {
   report(error: unknown, context?: ErrorReportContext): Promise<void>;
   countPending(): number;
+  /** Entrega los reportes pendientes al proveedor remoto y devuelve cuántos se enviaron. */
+  flush?(): Promise<number>;
 }

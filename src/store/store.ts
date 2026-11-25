@@ -40,6 +40,9 @@ const queue = new SQLiteOfflineQueue();
 const networkStatus = new NetInfoNetworkStatus();
 const errorReporter = new FirebaseCrashlyticsErrorReporter();
 
+// Se asigna después de crear el store para leer el usuario sin importarlo en bucle.
+let readCurrentUserId: () => string | null = () => null;
+
 const syncWorker = new OfflineSyncWorker({
   queue,
   networkStatus,
@@ -49,6 +52,7 @@ const syncWorker = new OfflineSyncWorker({
   exitPollRepository,
   actOcrRepository,
   errorReporter,
+  getCurrentUserId: () => readCurrentUserId(),
 });
 
 const evidenceCaptureDependencies = {
@@ -94,6 +98,8 @@ export const store = configureStore({
       },
     }),
 });
+
+readCurrentUserId = () => store.getState().auth.userId;
 
 export const appDependencies = {
   queue,

@@ -53,4 +53,16 @@ export class SQLiteErrorReporter implements ErrorReporter {
     );
     return Number(row?.count ?? 0);
   }
+
+  /** Marca como entregados los reportes locales ya enviados al proveedor remoto. */
+  markAllSent(): number {
+    const result = getDatabase().runSync(
+      'UPDATE error_reports SET sent = 1 WHERE sent = 0',
+    );
+    return Number(result.changes ?? 0);
+  }
+
+  async flush(): Promise<number> {
+    return this.markAllSent();
+  }
 }

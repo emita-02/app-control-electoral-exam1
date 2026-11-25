@@ -516,6 +516,24 @@
       "verify_jwt": true,
       "import_map": "./functions/gestionar-personal/deno.json",
       "entrypoint": "./functions/gestionar-personal/index.ts"
+    },
+    "confirmar-resultados": {
+      "enabled": true,
+      "verify_jwt": true,
+      "import_map": "./functions/confirmar-resultados/deno.json",
+      "entrypoint": "./functions/confirmar-resultados/index.ts"
+    },
+    "registrar-evidencia": {
+      "enabled": true,
+      "verify_jwt": true,
+      "import_map": "./functions/registrar-evidencia/deno.json",
+      "entrypoint": "./functions/registrar-evidencia/index.ts"
+    },
+    "registrar-encuesta": {
+      "enabled": true,
+      "verify_jwt": true,
+      "import_map": "./functions/registrar-encuesta/deno.json",
+      "entrypoint": "./functions/registrar-encuesta/index.ts"
     }
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
@@ -9,6 +9,7 @@ import {
   LoadingScreen,
   PrimaryButton,
 } from '@/features/auth/presentation/components/auth-ui';
+import { proposalToConfirmationInput } from '@/features/acts/application/confirm-correction';
 import {
   clearActConfirmation,
   confirmActResults,
@@ -45,14 +46,22 @@ export function ActCorrectionScreen({
 }: NativeStackScreenProps<WorkspaceStackParamList, 'ActCorrection'>) {
   const dispatch = useAppDispatch();
   const { actId } = route.params;
+  const [proposalState, setProposalState] = useState<{
+    actId: number;
+    proposal: ActCorrectionProposal;
+  } | null>(null);
+  const pendingProposal =
+    proposalState?.actId === actId ? proposalState.proposal : null;
   const { context, status, error } = useAppSelector((state) => state.actCorrection);
   const confirmation = useAppSelector((state) => state.actConfirmation);
 
   useEffect(() => {
+    dispatch(clearActConfirmation());
     dispatch(clearActCorrection());
     const request = dispatch(loadActCorrection(actId));
     return () => {
       request.abort();
+      dispatch(clearActConfirmation());
       dispatch(clearActCorrection());
     };
   }, [actId, dispatch]);
@@ -91,25 +100,42 @@ export function ActCorrectionScreen({
             assignedTableIds={context.assignedTableIds}
             onCorrectionPrepared={(proposal: ActCorrectionProposal) => {
               dispatch(clearActConfirmation());
-              void dispatch(
-                confirmActResults({
-                  action: 'apply_correction',
-                  actId,
-                  candidateVotes: proposal.correctedValues.candidateVotes.map(
-                    (candidate) => ({
-                      candidateId: Number(candidate.candidateReference),
-                      votes: candidate.votes,
-                    }),
-                  ),
-                  blankVotes: proposal.correctedValues.blankVotes,
-                  nullVotes: proposal.correctedValues.nullVotes,
-                  totalVotes: proposal.correctedValues.totalVotes,
-                  observation: proposal.correctedValues.observations || null,
-                  reason: proposal.reason,
-                }),
-              );
+              setProposalState({ actId, proposal });
             }}
           />
+
+          {pendingProposal ? (
+            <View className="gap-3 rounded-2xl border border-electoral-border bg-white p-5">
+              <Text className="text-base font-bold text-electoral-navy">
+                Autorización de la corrección
+              </Text>
+              <Text className="text-sm leading-5 text-electoral-text">
+                Revisa los valores propuestos. Al confirmar, la corrección se
+                guardará en el historial y se registrará como resultado oficial
+                de esta acta. Esta revisión humana es obligatoria.
+              </Text>
+              <PrimaryButton
+                label="Confirmar y aplicar corrección"
+                loading={confirmation.status === 'loading'}
+                disabled={confirmation.status === 'loading'}
+                onPress={() => {
+                  void dispatch(
+                    confirmActResults(
+                      proposalToConfirmationInput(pendingProposal, actId),
+                    ),
+                  )
+                    .unwrap()
+                    .then(() => {
+                      setProposalState(null);
+                      void dispatch(loadActCorrection(actId));
+                    })
+                    .catch(() => {
+                      // El error se muestra desde `state.actConfirmation`.
+                    });
+                }}
+              />
+            </View>
+          ) : null}
 
           {confirmation.status === 'loading' ? (
             <AuthNotice message="Guardando la corrección…" />

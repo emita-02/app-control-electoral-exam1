@@ -166,9 +166,10 @@ export function canCorrectElectoralAct(
     );
   }
 
+  // S-04: el acta conserva a su autor original, pero el veedor que hereda la
+  // mesa puede revisar y corregir las actas existentes de esa mesa.
   return (
     actor.role === userRoles.observer &&
-    actor.id === act.authorId &&
     assignedTableIds.includes(act.electoralTableId)
   );
 }

@@ -57,11 +57,16 @@ export const registerExitPoll = createAsyncThunk<
   { savedOffline: boolean },
   RegisterExitPollInput,
   { extra: DashboardDependencies }
->('dashboard/registerExitPoll', async (input, { extra }) => {
+>('dashboard/registerExitPoll', async (input, { extra, getState }) => {
   if (!(await extra.networkStatus.isOnline())) {
+    const userId = (getState() as { auth: { userId: string | null } }).auth
+      .userId;
     extra.queue.enqueue({
       type: 'exit_poll',
-      payload: input as unknown as Record<string, unknown>,
+      payload: {
+        ...(input as unknown as Record<string, unknown>),
+        __ownerId: userId,
+      },
     });
     return { savedOffline: true };
   }

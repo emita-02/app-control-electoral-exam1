@@ -5,6 +5,8 @@ export type EvidenceCoordinates = {
 };
 
 export type CapturedEvidence = {
+  /** Acta a la que pertenece la fotografía. Evita asociar una captura a otra acta. */
+  actId: number;
   userId: string;
   localUri: string;
   capturedAt: string;
@@ -14,10 +16,19 @@ export type CapturedEvidence = {
 };
 
 export type EvidenceCaptureInput = {
+  actId: number;
   userId: string;
   localUri: string;
   capturedAt: string;
 };
+
+/** Una fotografía solo puede registrarse en el acta para la que fue capturada. */
+export function captureBelongsToAct(
+  capture: Pick<CapturedEvidence, 'actId'>,
+  actId: number,
+): boolean {
+  return capture.actId === actId;
+}
 
 export const maximumLocationAgeAtCaptureMs = 5_000;
 

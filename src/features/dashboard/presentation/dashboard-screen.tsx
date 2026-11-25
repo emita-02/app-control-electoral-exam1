@@ -3,11 +3,12 @@ import { Pressable, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import {
-  AuthHeading,
+  AppShell,
   AuthNotice,
-  AuthShell,
   LoadingScreen,
   PrimaryButton,
+  RoleHeader,
+  StatusBadge,
 } from '@/features/auth/presentation/components/auth-ui';
 import { userRoles } from '@/features/auth/domain/user-profile';
 import type {
@@ -43,30 +44,78 @@ function Option({
     <Pressable
       accessibilityRole="radio"
       accessibilityState={{ selected }}
-      className={`min-h-11 justify-center rounded-xl border px-3 ${
+      className={`min-h-11 justify-center rounded-xl border-2 px-3.5 py-2 ${
         selected
           ? 'border-electoral-cyan bg-electoral-cyan-light'
           : 'border-electoral-border bg-white'
       }`}
       onPress={onPress}>
-      <Text className="text-sm font-semibold text-electoral-navy">{label}</Text>
+      <Text
+        className={`text-sm ${
+          selected ? 'font-extrabold text-electoral-navy' : 'font-semibold text-electoral-text'
+        }`}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
 function SummaryCard({ snapshot }: { snapshot: DashboardSnapshot }) {
+  const progressPct =
+    snapshot.totalTables > 0
+      ? Math.min(100, Math.round((snapshot.reportedTables / snapshot.totalTables) * 100))
+      : 0;
+
   return (
-    <View className="gap-3 rounded-2xl border border-electoral-border bg-white p-5">
-      <Text className="text-lg font-bold text-electoral-navy">Avance general</Text>
-      <Text className="text-base text-electoral-text">
-        Mesas con acta: {snapshot.reportedTables} de {snapshot.totalTables}
-      </Text>
-      <Text className="text-base text-electoral-text">
-        Actas aprobadas: {snapshot.approvedActs} · Pendientes: {snapshot.pendingActs}
-      </Text>
-      <Text className="text-base text-electoral-text">
-        Evidencias: {snapshot.evidenceCount} · Correcciones: {snapshot.correctionsCount}
-      </Text>
+    <View className="gap-4 rounded-2xl border border-electoral-border bg-white p-5 shadow-xs">
+      <View className="flex-row items-center justify-between">
+        <Text className="text-lg font-extrabold text-electoral-navy">Avance general</Text>
+        <StatusBadge label={`${progressPct}% escrutado`} tone="cyan" />
+      </View>
+
+      {/* Barra de progreso general */}
+      <View className="h-3 w-full overflow-hidden rounded-full bg-slate-100">
+        <View
+          className="h-full rounded-full bg-electoral-cyan"
+          style={{ width: `${progressPct}%` }}
+        />
+      </View>
+
+      <View className="flex-row flex-wrap gap-2.5">
+        <View className="min-w-[46%] flex-1 rounded-xl bg-electoral-background p-3">
+          <Text className="text-xs font-semibold text-electoral-muted">Mesas con acta</Text>
+          <Text className="mt-0.5 text-xl font-extrabold text-electoral-navy">
+            {snapshot.reportedTables}{' '}
+            <Text className="text-sm font-normal text-electoral-muted">
+              / {snapshot.totalTables}
+            </Text>
+          </Text>
+        </View>
+
+        <View className="min-w-[46%] flex-1 rounded-xl bg-electoral-cyan-light/70 p-3">
+          <Text className="text-xs font-semibold text-electoral-navy">Actas aprobadas</Text>
+          <Text className="mt-0.5 text-xl font-extrabold text-electoral-navy">
+            {snapshot.approvedActs}
+          </Text>
+        </View>
+
+        <View className="min-w-[46%] flex-1 rounded-xl bg-electoral-background p-3">
+          <Text className="text-xs font-semibold text-electoral-muted">En revisión</Text>
+          <Text className="mt-0.5 text-xl font-extrabold text-electoral-navy">
+            {snapshot.pendingActs}
+          </Text>
+        </View>
+
+        <View className="min-w-[46%] flex-1 rounded-xl bg-electoral-background p-3">
+          <Text className="text-xs font-semibold text-electoral-muted">Evidencias / Corr.</Text>
+          <Text className="mt-0.5 text-xl font-extrabold text-electoral-navy">
+            {snapshot.evidenceCount}{' '}
+            <Text className="text-sm font-normal text-electoral-muted">
+              · {snapshot.correctionsCount}
+            </Text>
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -74,22 +123,58 @@ function SummaryCard({ snapshot }: { snapshot: DashboardSnapshot }) {
 function CandidateList({ candidates }: { candidates: DashboardCandidateResult[] }) {
   if (candidates.length === 0) {
     return (
-      <Text className="text-sm text-electoral-muted">
-        Todavía no hay resultados aprobados para esta dignidad.
-      </Text>
+      <View className="rounded-xl bg-electoral-background p-3.5">
+        <Text className="text-sm text-electoral-muted">
+          Todavía no hay resultados aprobados para esta dignidad.
+        </Text>
+      </View>
     );
   }
 
   return (
-    <View className="gap-2">
-      {candidates.map((candidate) => (
-        <View key={candidate.candidateId} className="gap-1">
-          <Text className="text-sm font-semibold text-electoral-navy">
-            {candidate.candidateName} · {candidate.votes} votos ({candidate.percentage}%)
-          </Text>
-          <Text className="text-xs text-electoral-muted">{candidate.organization}</Text>
-        </View>
-      ))}
+    <View className="gap-3">
+      {candidates.map((candidate, index) => {
+        const barWidth = Math.min(100, Math.max(2, candidate.percentage));
+        const isLeader = index === 0 && candidate.votes > 0;
+
+        return (
+          <View
+            key={candidate.candidateId}
+            className={`gap-2 rounded-xl border p-3.5 ${
+              isLeader
+                ? 'border-electoral-cyan bg-electoral-cyan-light/40'
+                : 'border-electoral-border bg-electoral-background/60'
+            }`}>
+            <View className="flex-row items-start justify-between gap-2">
+              <View className="flex-1">
+                <Text className="text-sm font-extrabold text-electoral-navy">
+                  {candidate.candidateName}
+                </Text>
+                <Text className="text-xs font-medium text-electoral-muted">
+                  {candidate.organization}
+                </Text>
+              </View>
+              <View className="items-end">
+                <Text className="text-base font-extrabold text-electoral-navy">
+                  {candidate.percentage}%
+                </Text>
+                <Text className="text-xs font-semibold text-electoral-muted">
+                  {candidate.votes} votos
+                </Text>
+              </View>
+            </View>
+
+            <View className="h-2.5 w-full overflow-hidden rounded-full bg-white">
+              <View
+                className={`h-full rounded-full ${
+                  isLeader ? 'bg-electoral-cyan' : 'bg-electoral-navy'
+                }`}
+                style={{ width: `${barWidth}%` }}
+              />
+            </View>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -128,54 +213,71 @@ function ExitPollForm({ snapshot }: { snapshot: DashboardSnapshot }) {
   };
 
   return (
-    <View className="gap-4 rounded-2xl border border-electoral-border bg-white p-5">
-      <Text className="text-lg font-bold text-electoral-navy">Registrar Exit Poll</Text>
+    <View className="gap-4 rounded-2xl border-2 border-electoral-navy/15 bg-white p-5 shadow-xs">
+      <View className="flex-row items-center justify-between">
+        <Text className="text-lg font-extrabold text-electoral-navy">Registrar Exit Poll</Text>
+        <StatusBadge label="Boca de urna" tone="navy" />
+      </View>
       <Text className="text-sm leading-5 text-electoral-muted">
         Las respuestas son independientes de los resultados oficiales y se asocian a la mesa seleccionada.
       </Text>
 
-      <Text className="text-sm font-bold text-electoral-navy">Mesa</Text>
-      <View className="flex-row flex-wrap gap-2">
-        {snapshot.tables.map((table) => (
-          <Option
-            key={table.id}
-            label={`Mesa ${table.tableNumber}`}
-            selected={tableId === table.id}
-            onPress={() => setTableId(table.id)}
-          />
-        ))}
+      <View className="gap-2">
+        <Text className="text-xs font-bold uppercase tracking-wide text-electoral-navy">
+          1. Selecciona la mesa
+        </Text>
+        <View className="flex-row flex-wrap gap-2">
+          {snapshot.tables.map((table) => (
+            <Option
+              key={table.id}
+              label={`Mesa ${table.tableNumber}`}
+              selected={tableId === table.id}
+              onPress={() => setTableId(table.id)}
+            />
+          ))}
+        </View>
       </View>
 
-      <Text className="text-sm font-bold text-electoral-navy">Dignidad</Text>
-      <View className="flex-row flex-wrap gap-2">
-        {snapshot.positions.map((position) => (
-          <Option
-            key={position.positionId}
-            label={position.positionName}
-            selected={positionId === position.positionId}
-            onPress={() => {
-              setPositionId(position.positionId);
-              setCandidateId(null);
-            }}
-          />
-        ))}
+      <View className="gap-2">
+        <Text className="text-xs font-bold uppercase tracking-wide text-electoral-navy">
+          2. Dignidad
+        </Text>
+        <View className="flex-row flex-wrap gap-2">
+          {snapshot.positions.map((position) => (
+            <Option
+              key={position.positionId}
+              label={position.positionName}
+              selected={positionId === position.positionId}
+              onPress={() => {
+                setPositionId(position.positionId);
+                setCandidateId(null);
+              }}
+            />
+          ))}
+        </View>
       </View>
 
-      <Text className="text-sm font-bold text-electoral-navy">Respuesta</Text>
-      <View className="flex-row flex-wrap gap-2">
-        {responseTypes.map((type) => (
-          <Option
-            key={type.value}
-            label={type.label}
-            selected={responseType === type.value}
-            onPress={() => setResponseType(type.value)}
-          />
-        ))}
+      <View className="gap-2">
+        <Text className="text-xs font-bold uppercase tracking-wide text-electoral-navy">
+          3. Tipo de respuesta
+        </Text>
+        <View className="flex-row flex-wrap gap-2">
+          {responseTypes.map((type) => (
+            <Option
+              key={type.value}
+              label={type.label}
+              selected={responseType === type.value}
+              onPress={() => setResponseType(type.value)}
+            />
+          ))}
+        </View>
       </View>
 
       {responseType === 'candidate' ? (
         <View className="gap-2">
-          <Text className="text-sm font-bold text-electoral-navy">Candidatura</Text>
+          <Text className="text-xs font-bold uppercase tracking-wide text-electoral-navy">
+            4. Candidatura elegida
+          </Text>
           <View className="flex-row flex-wrap gap-2">
             {(selectedPosition?.officialCandidates ?? []).map((candidate) => (
               <Option
@@ -201,6 +303,7 @@ function ExitPollForm({ snapshot }: { snapshot: DashboardSnapshot }) {
       ) : null}
       <PrimaryButton
         label="Guardar respuesta"
+        variant="navy"
         loading={exitPollStatus === 'loading'}
         disabled={
           tableId === null ||
@@ -233,20 +336,17 @@ export function DashboardScreen({
   }
 
   return (
-    <AuthShell>
-      <Pressable
-        accessibilityRole="button"
-        className="min-h-11 justify-center"
-        onPress={() => navigation.goBack()}>
-        <Text className="text-base font-semibold text-electoral-navy">Volver</Text>
-      </Pressable>
-      <AuthHeading
-        title="Panel de resultados"
-        description="Información disponible según tu rol y jurisdicción. Los datos electorales oficiales requieren revisión humana."
-      />
-
+    <AppShell
+      header={
+        <RoleHeader
+          badge="Monitoreo en Vivo"
+          title="Panel de resultados"
+          subtitle="Consolidado electoral y Exit Poll según tu jurisdicción."
+          onBack={() => navigation.goBack()}
+        />
+      }>
       {status === 'failed' ? (
-        <>
+        <View className="gap-3">
           <AuthNotice message={error ?? 'No se pudo cargar el panel.'} />
           <PrimaryButton
             label="Reintentar"
@@ -255,52 +355,84 @@ export function DashboardScreen({
               void dispatch(loadDashboard());
             }}
           />
-        </>
+        </View>
       ) : null}
 
       {snapshot ? (
         <>
           <SummaryCard snapshot={snapshot} />
 
-          <View className="gap-4 rounded-2xl border border-electoral-border bg-white p-5">
-            <Text className="text-lg font-bold text-electoral-navy">
+          {/* Seguimiento por recinto */}
+          <View className="gap-3.5 rounded-2xl border border-electoral-border bg-white p-5 shadow-xs">
+            <Text className="text-lg font-extrabold text-electoral-navy">
               Seguimiento por recinto
             </Text>
-            {snapshot.pollingPlaces.map((place) => (
-              <View key={place.pollingPlaceId} className="gap-1">
-                <Text className="text-sm font-semibold text-electoral-navy">
-                  {place.pollingPlaceName}
-                </Text>
-                <Text className="text-sm text-electoral-muted">
-                  Mesas reportadas: {place.reportedTables} de {place.totalTables} · Actas: {place.reportedActs}
-                </Text>
-              </View>
-            ))}
+            {snapshot.pollingPlaces.map((place) => {
+              const pct =
+                place.totalTables > 0
+                  ? Math.min(100, Math.round((place.reportedTables / place.totalTables) * 100))
+                  : 0;
+              return (
+                <View
+                  key={place.pollingPlaceId}
+                  className="gap-2 rounded-xl border border-electoral-border bg-electoral-background/60 p-3.5">
+                  <View className="flex-row items-center justify-between gap-2">
+                    <Text className="flex-1 text-sm font-extrabold text-electoral-navy">
+                      {place.pollingPlaceName}
+                    </Text>
+                    <Text className="text-xs font-extrabold text-electoral-cyan">{pct}%</Text>
+                  </View>
+                  <View className="h-2 w-full overflow-hidden rounded-full bg-white">
+                    <View
+                      className="h-full rounded-full bg-electoral-cyan"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </View>
+                  <Text className="text-xs font-medium text-electoral-muted">
+                    Mesas reportadas: {place.reportedTables} de {place.totalTables} · Actas:{' '}
+                    {place.reportedActs}
+                  </Text>
+                </View>
+              );
+            })}
           </View>
 
+          {/* Resultados por dignidad */}
           {snapshot.positions.map((position) => {
             const exitPoll = exitPollByPosition.get(position.positionId);
             return (
               <View
                 key={position.positionId}
-                className="gap-4 rounded-2xl border border-electoral-border bg-white p-5">
-                <View>
-                  <Text className="text-lg font-bold text-electoral-navy">
-                    {position.positionName}
-                  </Text>
-                  <Text className="text-sm text-electoral-muted">
-                    Actas: {position.reportedActs} · Total: {position.totalVotes} · Blancos:{' '}
-                    {position.blankVotes} · Nulos: {position.nullVotes}
+                className="gap-4 rounded-2xl border border-electoral-border bg-white p-5 shadow-xs">
+                <View className="gap-1 border-b border-electoral-border pb-3">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-lg font-extrabold text-electoral-navy">
+                      {position.positionName}
+                    </Text>
+                    <StatusBadge label={`${position.reportedActs} actas`} tone="cyan" />
+                  </View>
+                  <Text className="text-xs font-semibold text-electoral-muted">
+                    Total votos: {position.totalVotes} · Blancos: {position.blankVotes} · Nulos:{' '}
+                    {position.nullVotes}
                   </Text>
                 </View>
+
                 <CandidateList candidates={position.candidates} />
+
                 {exitPoll ? (
-                  <View className="gap-1">
-                    <Text className="text-sm font-bold text-electoral-navy">
-                      Exit Poll: {exitPoll.totalResponses} respuesta(s)
-                    </Text>
+                  <View className="mt-1 gap-3 border-t border-dashed border-electoral-border pt-4">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-sm font-extrabold text-electoral-navy">
+                        Tendencia Exit Poll
+                      </Text>
+                      <StatusBadge
+                        label={`${exitPoll.totalResponses} muestra(s)`}
+                        tone="neutral"
+                      />
+                    </View>
                     <Text className="text-xs text-electoral-muted">
-                      Blanco: {exitPoll.blankResponses} · Nulo: {exitPoll.nullResponses} · Sin respuesta: {exitPoll.noResponses}
+                      Blanco: {exitPoll.blankResponses} · Nulo: {exitPoll.nullResponses} · Sin
+                      respuesta: {exitPoll.noResponses}
                     </Text>
                     <CandidateList candidates={exitPoll.candidateResponses} />
                   </View>
@@ -309,34 +441,43 @@ export function DashboardScreen({
             );
           })}
 
-          <View className="gap-3 rounded-2xl border border-electoral-border bg-white p-5">
-            <Text className="text-lg font-bold text-electoral-navy">
-              Actas recientes
-            </Text>
+          {/* Actas recientes */}
+          <View className="gap-3 rounded-2xl border border-electoral-border bg-white p-5 shadow-xs">
+            <Text className="text-lg font-extrabold text-electoral-navy">Actas recientes</Text>
             {snapshot.recentActs.length === 0 ? (
               <Text className="text-sm text-electoral-muted">
                 Todavía no hay actas registradas en tu jurisdicción.
               </Text>
             ) : (
               snapshot.recentActs.map((act) => (
-                <View key={act.actId} className="gap-1">
-                  <Text className="text-sm font-semibold text-electoral-navy">
-                    Mesa {act.tableNumber} · {act.positionName}
-                  </Text>
+                <View
+                  key={act.actId}
+                  className="gap-2 rounded-xl border border-electoral-border bg-electoral-background/60 p-3.5">
+                  <View className="flex-row items-center justify-between gap-2">
+                    <Text className="text-sm font-extrabold text-electoral-navy">
+                      Mesa {act.tableNumber} · {act.positionName}
+                    </Text>
+                    <StatusBadge label={act.status} tone="cyan" />
+                  </View>
                   <Text className="text-xs text-electoral-muted">
-                    {act.pollingPlaceName} · Estado: {act.status} · Evidencias: {act.evidenceCount}
+                    {act.pollingPlaceName} · Evidencias: {act.evidenceCount}
                   </Text>
+                  {act.latitude !== null && act.longitude !== null ? (
+                    <Text className="text-xs font-medium text-electoral-navy">
+                      GPS: {act.latitude.toFixed(5)}, {act.longitude.toFixed(5)}
+                    </Text>
+                  ) : null}
                   {(profile?.role === userRoles.observer ||
                     profile?.role === userRoles.precinctCoordinator) &&
                   act.actId > 0 ? (
                     <Pressable
                       accessibilityRole="button"
-                      className="min-h-11 justify-center"
+                      className="mt-1 min-h-10 items-center justify-center rounded-xl border border-electoral-navy bg-white px-3 active:opacity-75"
                       onPress={() =>
                         navigation.navigate('ActCorrection', { actId: act.actId })
                       }>
-                      <Text className="text-sm font-semibold text-electoral-navy">
-                        Corregir acta
+                      <Text className="text-xs font-extrabold text-electoral-navy">
+                        Corregir acta →
                       </Text>
                     </Pressable>
                   ) : null}
@@ -346,13 +487,13 @@ export function DashboardScreen({
           </View>
 
           {snapshot.locationWarnings.length > 0 ? (
-            <View className="gap-2 rounded-xl border border-electoral-red bg-white p-4">
-              <Text className="text-sm font-bold text-electoral-navy">
-                Advertencias de ubicación
+            <View className="gap-2 rounded-2xl border-l-4 border-electoral-red bg-red-50 p-4">
+              <Text className="text-sm font-extrabold text-electoral-red">
+                Advertencias de ubicación GPS
               </Text>
               {snapshot.locationWarnings.map((warning) => (
                 <Text key={warning.actId} className="text-sm leading-5 text-electoral-red">
-                  Acta {warning.actId}, mesa {warning.tableNumber}: evidencia a{' '}
+                  • Acta #{warning.actId}, mesa {warning.tableNumber}: evidencia a{' '}
                   {warning.distanceMeters} m del centro estimado de la jurisdicción.
                 </Text>
               ))}
@@ -365,6 +506,6 @@ export function DashboardScreen({
           ) : null}
         </>
       ) : null}
-    </AuthShell>
+    </AppShell>
   );
 }

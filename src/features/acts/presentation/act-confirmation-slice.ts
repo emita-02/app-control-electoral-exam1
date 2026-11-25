@@ -47,11 +47,16 @@ export const confirmActResults = createAsyncThunk<
   ConfirmActResult & { savedOffline: boolean },
   ConfirmActInput,
   { extra: ConfirmationDependencies }
->('acts/confirmResults', async (input, { extra }) => {
+>('acts/confirmResults', async (input, { extra, getState }) => {
   if (!(await extra.networkStatus.isOnline())) {
+    const userId = (getState() as { auth: { userId: string | null } }).auth
+      .userId;
     extra.queue.enqueue({
       type: input.action,
-      payload: input as unknown as Record<string, unknown>,
+      payload: {
+        ...(input as unknown as Record<string, unknown>),
+        __ownerId: userId,
+      },
     });
     return {
       actId: input.actId,

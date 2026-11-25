@@ -19,6 +19,8 @@ export async function captureEvidence(
 ): Promise<CapturedEvidence> {
   const capturedAtMilliseconds = Date.parse(input.capturedAt);
   if (
+    !Number.isSafeInteger(input.actId) ||
+    input.actId <= 0 ||
     !input.userId.trim() ||
     !input.localUri.trim() ||
     !Number.isFinite(capturedAtMilliseconds)

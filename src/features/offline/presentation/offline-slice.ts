@@ -88,7 +88,12 @@ export const retryOfflineOperation = createAsyncThunk<
   number,
   { extra: OfflineThunkDependencies }
 >('offline/retry', async (id, { extra, dispatch }) => {
-  extra.queue.update(id, { status: 'pending', lastError: null });
+  extra.queue.update(id, {
+    status: 'pending',
+    attempts: 0,
+    lastError: null,
+  });
+  extra.queue.deleteState(`retry_after.${id}`);
   await dispatch(syncOfflineOperations()).unwrap();
   return snapshot(extra.queue);
 });

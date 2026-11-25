@@ -91,12 +91,14 @@ export const submitElectoralAct = createAsyncThunk<
   { extra: ActRegistrationDependencies }
 >(
   'acts/register',
-  async (input, { extra }) => {
+  async (input, { extra, getState }) => {
     if (!(await extra.networkStatus.isOnline())) {
       const localId = -Date.now();
+      const userId = (getState() as { auth: { userId: string | null } }).auth
+        .userId;
       extra.queue.enqueue({
         type: 'register_act',
-        payload: { ...input, __localId: localId },
+        payload: { ...input, __localId: localId, __ownerId: userId },
       });
       return {
         savedOffline: true,
