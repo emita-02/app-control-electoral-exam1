@@ -501,6 +501,12 @@
       "verify_jwt": true,
       "import_map": "./functions/procesar-acta-ocr/deno.json",
       "entrypoint": "./functions/procesar-acta-ocr/index.ts"
+    },
+    "registrar-recinto": {
+      "enabled": true,
+      "verify_jwt": true,
+      "import_map": "./functions/registrar-recinto/deno.json",
+      "entrypoint": "./functions/registrar-recinto/index.ts"
     }
   }
 }

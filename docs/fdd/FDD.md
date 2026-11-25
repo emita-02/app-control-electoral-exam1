@@ -27,7 +27,7 @@ El sistema debe recuperar el perfil y las asignaciones territoriales del usuario
 - Inicio/cierre de sesión y recuperación de contraseña mediante Supabase Auth.
 - Persistencia móvil de sesión con Expo SecureStore y validación de sesión protegida por Redux Toolkit.
 - Carga del perfil desde `public.profiles` y del rol mediante `get_my_role()`. Se valida el estado con `is_active_user()`. El identificador de usuario es UUID; `role_id` y `province_id` son numéricos, y `province_id` admite `null`.
-- La jurisdicción recuperada se limita a `province_id`, confirmado en el contrato de `profiles`. No se consultan cantones ni recintos porque sus relaciones no están definidas.
+- La jurisdicción recuperada se limita a `province_id`, confirmado en el contrato de `profiles`. La consulta territorial de F02 utiliza las relaciones existentes en Supabase para obtener los niveles inferiores.
 - Navegación implementada directamente con React Navigation Native Stack. El navegador de trabajo solo registra la pantalla del rol validado; los tres espacios son puntos de entrada y no implementan módulos posteriores.
 - No se ofrece autorregistro desde la aplicación.
 - El enlace nativo de recuperación usa explícitamente `controlelectoral://reset-password`; React Navigation resuelve esa ruta y Supabase Auth intercambia el callback una sola vez. En web, el callback lo procesa la detección de URL ya configurada en Supabase Auth. Los eventos `PASSWORD_RECOVERY` repetidos para la misma sesión no vuelven a iniciar la hidratación del perfil.
@@ -48,11 +48,37 @@ Permite consultar y administrar la estructura territorial electoral:
 
 Los usuarios solamente pueden gestionar o consultar información dentro de su ámbito de autorización.
 
+#### Primera parte: consulta de la estructura territorial
+
+- El coordinador provincial puede consultar la provincia asignada a su perfil y explorar cantones, parroquias, recintos y mesas.
+- La lectura utiliza las relaciones existentes en Supabase: `provinces → cantons → parishes → polling_places → electoral_tables`. No se crean datos ni relaciones.
+- La consulta se limita al `province_id` del perfil activo; la pantalla no presenta opciones de escritura.
+- La verificación del esquema remoto encontró actualmente un registro de Pichincha en cada nivel inferior: un cantón, una parroquia, un recinto y una mesa. La aplicación obtiene los nombres e identificadores del servidor; no codifica estos valores.
+- Las políticas de lectura existentes permiten la consulta a usuarios activos. No aplican una restricción RLS por provincia; el cliente filtra por el `province_id` del perfil. El alcance del trabajo no incluye modificar políticas ni el esquema.
+
+**Estado de F02:** implementada la primera parte de consulta. La administración territorial no está incluida en esta entrega.
+
+**Verificación de la primera parte:** el lint dirigido a los archivos de F02 pasó; la verificación TypeScript de la aplicación, excluyendo la Edge Function de OCR, pasó; y `npx expo export --platform android --no-minify` generó el bundle Android. No existe un comando ni configuración de pruebas automatizadas en `package.json`.
+
+**Pendientes de verificación:** `npm run lint` continúa fallando por el error preexistente de `src/hooks/use-color-scheme.web.ts`; `npx tsc --noEmit` continúa reportando errores preexistentes en `supabase/functions/procesar-acta-ocr/index.ts`. No se probó la pantalla con una cuenta autenticada en un dispositivo Android. La consulta requiere conexión y el esquema/RLS no se modificó.
+
 ### F03 — Recintos y mesas electorales
 
 Permite gestionar los recintos electorales y sus respectivas mesas.
 
 Cada mesa debe estar asociada a su recinto y estructura territorial.
+
+#### Alcance implementado: registro de recintos
+
+- El coordinador provincial puede registrar un recinto seleccionando una parroquia ya existente dentro de su provincia.
+- El nombre es obligatorio; el código y la dirección son opcionales y corresponden a columnas existentes en `polling_places`.
+- La Edge Function `registrar-recinto` valida la sesión activa, el rol, la provincia del perfil y la relación `parishes → cantons → provinces` antes de insertar en `polling_places`.
+- La consulta de mesas de F02 se conserva; no se crean ni modifican mesas.
+- No se modificaron el esquema ni las políticas RLS. La inserción protegida se ejecuta en la Edge Function con la credencial de servidor, que no se expone al cliente.
+
+**Estado de F03:** implementación local completada; falta desplegar la Edge Function y verificar el flujo con una cuenta autorizada.
+
+**Verificación:** lint dirigido y TypeScript de la aplicación completados. La configuración Supabase JSONC es válida y requiere JWT para la función. No hay un ejecutor de pruebas configurado; no se pudo validar la función con el runtime local porque Deno y Docker/Podman no están instalados. No se desplegó la función ni se modificó información remota.
 
 ### F04 — Gestión de personal
 

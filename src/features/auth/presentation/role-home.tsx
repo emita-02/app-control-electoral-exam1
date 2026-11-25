@@ -1,6 +1,10 @@
 import { Text, View } from 'react-native';
 
-import { roleLabels, type UserRole } from '@/features/auth/domain/user-profile';
+import {
+  roleLabels,
+  userRoles,
+  type UserRole,
+} from '@/features/auth/domain/user-profile';
 import { useAuthActions } from '@/features/auth/presentation/auth-context';
 import {
   AuthBrand,
@@ -11,7 +15,13 @@ import {
 } from '@/features/auth/presentation/components/auth-ui';
 import { useAppSelector } from '@/store/store';
 
-export function RoleHome({ role }: { role: UserRole }) {
+export function RoleHome({
+  role,
+  onOpenTerritory,
+}: {
+  role: UserRole;
+  onOpenTerritory?: () => void;
+}) {
   const { signOut } = useAuthActions();
   const { error, profile } = useAppSelector((state) => state.auth);
 
@@ -66,6 +76,13 @@ export function RoleHome({ role }: { role: UserRole }) {
           El acceso a los datos depende de los permisos configurados en Supabase.
         </Text>
       </View>
+
+      {role === userRoles.provincialCoordinator && onOpenTerritory ? (
+        <PrimaryButton
+          label="Consultar estructura territorial"
+          onPress={onOpenTerritory}
+        />
+      ) : null}
 
       {error ? <AuthNotice message={error} /> : null}
       <PrimaryButton label="Cerrar sesión" onPress={onSignOut} />

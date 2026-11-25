@@ -3,6 +3,7 @@ import {
   type LinkingOptions,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 
 import ForgotPasswordScreen from '@/features/auth/presentation/screens/forgot-password-screen';
@@ -11,6 +12,7 @@ import ResetPasswordScreen from '@/features/auth/presentation/screens/reset-pass
 import { RoleHome } from '@/features/auth/presentation/role-home';
 import { userRoles } from '@/features/auth/domain/user-profile';
 import { LoadingScreen } from '@/features/auth/presentation/components/auth-ui';
+import { TerritoryScreen } from '@/features/territory/presentation/territory-screen';
 import { useAppSelector } from '@/store/store';
 import type {
   AuthStackParamList,
@@ -38,6 +40,7 @@ const linking: LinkingOptions<RootStackParamList> = {
         path: 'workspace',
         screens: {
           ProvincialHome: 'provincial',
+          TerritorialStructure: 'territory',
           PrecinctCoordinatorHome: 'precinct-coordinator',
           ObserverHome: 'observer',
         },
@@ -61,8 +64,15 @@ function AuthNavigator() {
   );
 }
 
-function ProvincialHomeScreen() {
-  return <RoleHome role={userRoles.provincialCoordinator} />;
+function ProvincialHomeScreen({
+  navigation,
+}: NativeStackScreenProps<WorkspaceStackParamList, 'ProvincialHome'>) {
+  return (
+    <RoleHome
+      role={userRoles.provincialCoordinator}
+      onOpenTerritory={() => navigation.navigate('TerritorialStructure')}
+    />
+  );
 }
 
 function PrecinctCoordinatorHomeScreen() {
@@ -92,7 +102,16 @@ function WorkspaceNavigator() {
       }
       screenOptions={{ headerShown: false, animation: 'fade' }}>
       {role === userRoles.provincialCoordinator ? (
-        <WorkspaceStack.Screen name="ProvincialHome" component={ProvincialHomeScreen} />
+        <>
+          <WorkspaceStack.Screen
+            name="ProvincialHome"
+            component={ProvincialHomeScreen}
+          />
+          <WorkspaceStack.Screen
+            name="TerritorialStructure"
+            component={TerritoryScreen}
+          />
+        </>
       ) : null}
       {role === userRoles.precinctCoordinator ? (
         <WorkspaceStack.Screen
