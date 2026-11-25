@@ -44,4 +44,4 @@ example
 
 # Archivo con credenciales
 .env
-
+.cursor
