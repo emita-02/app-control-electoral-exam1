@@ -10,6 +10,12 @@ export type WorkspaceStackParamList = {
   ProvincialHome: undefined;
   TerritorialStructure: undefined;
   PersonnelManagement: undefined;
+  Dashboard: undefined;
+  OfflineHistory: undefined;
+  EvidenceCapture: { actId: number };
+  ActRegistration: undefined;
+  ActOcrReview: { actId: number; evidenceId: number; reviewKey?: string };
+  ActCorrection: { actId: number };
   PrecinctCoordinatorHome: undefined;
   ObserverHome: undefined;
 };

@@ -101,16 +101,19 @@ Utiliza el desarrollo basado en funcionalidades (FDD, por sus siglas en inglés)
 
 Organiza la implementación en torno a funcionalidades específicas, en lugar de desarrollar toda la aplicación de una sola vez.
 
-Catálogo inicial de funcionalidades:
+Catálogo de funcionalidades (según `docs/fdd/FDD.md`):
 
-- F01 — Autenticación y gestión de usuarios.
-- F02 — Gestión territorial y de centros de votación.
-- F03 — Gestión de personal y tareas.
-- F04 — Registro y validación de actas electorales.
-- F05 — OCR y extracción asistida de datos.
-- F06 — Almacenamiento sin conexión (offline) y sincronización.
-- F07 — Paneles de seguimiento electoral y encuestas a pie de urna (Exit Polls).
-- F08 — Monitoreo de errores y fiabilidad de la aplicación.
+- F01 — Autenticación y autorización.
+- F02 — Gestión territorial.
+- F03 — Recintos y mesas electorales.
+- F04 — Gestión de personal.
+- F05 — Registro de actas.
+- F06 — Evidencias fotográficas y GPS.
+- F07 — Validación y corrección.
+- F08 — OCR.
+- F09 — Funcionamiento offline y sincronización.
+- F10 — Paneles y Exit Poll.
+- F11 — Monitoreo y gestión de errores.
 
 Cada funcionalidad debe incluir:
 

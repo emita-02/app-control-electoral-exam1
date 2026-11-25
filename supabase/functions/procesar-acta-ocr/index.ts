@@ -5,11 +5,7 @@ import { withSupabase } from "@supabase/server";
 const GEMINI_MODEL = "gemini-2.5-flash";
 const STORAGE_BUCKET = "act-evidence";
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
-
-interface RequestBody {
-  actId: number;
-  evidenceId: number;
-}
+const GEMINI_TIMEOUT_MS = 45_000;
 
 interface CandidateRow {
   id: number | string;
@@ -69,6 +65,10 @@ function isNullableVote(value: unknown): value is number | null {
   return value === null || isValidVote(value);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
 
@@ -99,66 +99,56 @@ function parseGeminiJson(text: string): OcrResponse {
 
   const parsed: unknown = JSON.parse(cleanedText);
 
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    !("candidates" in parsed) ||
-    !Array.isArray(parsed.candidates)
-  ) {
+  if (!isRecord(parsed) || !Array.isArray(parsed.candidates)) {
     throw new Error("La respuesta de Gemini no tiene la estructura esperada.");
   }
 
-  const data = parsed as Record<string, unknown>;
-
   if (
-    !isNullableVote(data.blank_votes) ||
-    !isNullableVote(data.null_votes) ||
-    !isNullableVote(data.total_votes)
+    !isNullableVote(parsed.blank_votes) ||
+    !isNullableVote(parsed.null_votes) ||
+    !isNullableVote(parsed.total_votes) ||
+    !Array.isArray(parsed.warnings)
   ) {
-    throw new Error("Gemini devolvió valores de votos inválidos.");
+    throw new Error("Gemini devolvió campos incompletos o inválidos.");
   }
 
+  const rawCandidates: unknown[] = parsed.candidates;
+  const warnings: string[] = parsed.warnings.map((warning: unknown) => {
+    if (typeof warning !== "string") {
+      throw new Error("Gemini devolvió una observación inválida.");
+    }
+    return warning;
+  });
   const candidates: OcrCandidate[] = [];
 
-  for (const item of data.candidates) {
-    if (
-      typeof item !== "object" ||
-      item === null ||
-      !("candidate_id" in item) ||
-      !("votes" in item) ||
-      !("readable" in item)
-    ) {
+  for (const item of rawCandidates) {
+    if (!isRecord(item)) {
       throw new Error("Gemini devolvió un candidato con estructura inválida.");
     }
 
-    const candidate = item as Record<string, unknown>;
-
     if (
-      typeof candidate.candidate_id !== "string" ||
-      !isNullableVote(candidate.votes) ||
-      typeof candidate.readable !== "boolean"
+      typeof item.candidate_id !== "string" ||
+      item.candidate_id.trim().length === 0 ||
+      !isNullableVote(item.votes) ||
+      typeof item.readable !== "boolean" ||
+      (item.readable && item.votes === null) ||
+      (!item.readable && item.votes !== null)
     ) {
       throw new Error("Gemini devolvió datos inválidos para un candidato.");
     }
 
     candidates.push({
-      candidate_id: candidate.candidate_id,
-      votes: candidate.readable ? candidate.votes : null,
-      readable: candidate.readable,
+      candidate_id: item.candidate_id,
+      votes: item.votes,
+      readable: item.readable,
     });
   }
 
-  const warnings = Array.isArray(data.warnings)
-    ? data.warnings.filter(
-      (warning): warning is string => typeof warning === "string",
-    )
-    : [];
-
   return {
     candidates,
-    blank_votes: data.blank_votes,
-    null_votes: data.null_votes,
-    total_votes: data.total_votes,
+    blank_votes: parsed.blank_votes,
+    null_votes: parsed.null_votes,
+    total_votes: parsed.total_votes,
     warnings,
   };
 }
@@ -189,7 +179,7 @@ export default {
         }
 
         // 3. Validar los datos recibidos.
-        let body: RequestBody;
+        let body: unknown;
 
         try {
           body = await req.json();
@@ -198,6 +188,7 @@ export default {
         }
 
         if (
+          !isRecord(body) ||
           !isPositiveSafeInteger(body.actId) ||
           !isPositiveSafeInteger(body.evidenceId)
         ) {
@@ -221,12 +212,6 @@ export default {
         // 5. Comprobar que el usuario tenga el rol de veedor.
         const { data: userRole, error: roleError } =
           await ctx.supabase.rpc("get_my_role");
-
-          console.log("Diagnóstico del rol:", {
-            userId,
-            userRole,
-            roleError: roleError?.message ?? null,
-          }); 
 
         if (
           roleError ||
@@ -382,16 +367,6 @@ export default {
 
         const imageBytes = new Uint8Array(await image.arrayBuffer());
 
-        console.log("Diagnóstico de imagen:", {
-          storagePath: evidence.storage_path,
-          contentType: image.type,
-          size: image.size,
-          firstBytes: Array.from(imageBytes.slice(0, 12)).map(
-            (byte) => byte.toString(16).padStart(2, "0"),
-          ).join(" "),
-          isJpeg: isJpeg(imageBytes),
-        });
-
         if (!isJpeg(imageBytes)) {
           return jsonError(
             "La evidencia no tiene un formato JPEG válido.",
@@ -438,6 +413,7 @@ INSTRUCCIONES:
 5. Si un valor es ilegible, dudoso o no aparece claramente, devuelve null.
 6. readable debe ser true únicamente cuando el valor del candidato pueda
    leerse con suficiente claridad.
+   Si readable es false, votes debe ser null.
 7. Extrae también los votos blancos, nulos y el total de votos.
 8. No confundas números escritos a mano, tachaduras o anotaciones con votos.
 9. No completes valores mediante suposiciones o cálculos.
@@ -455,99 +431,185 @@ definitivamente. Por tanto, prioriza la precisión y señala cualquier duda.
           `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
         );
 
-        geminiUrl.searchParams.set("key", geminiApiKey);
-
-        
-      let geminiResponse: Response;
-
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        geminiResponse = await fetch(geminiUrl.toString(), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  { text: prompt },
-                  {
-                    inlineData: {
-                      mimeType: "image/jpeg",
-                      data: imageBase64,
-                    },
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              responseMimeType: "application/json",
-              responseJsonSchema: {
-                // CONSERVA AQUÍ EL responseJsonSchema
-                // COMPLETO QUE YA TIENES IMPLEMENTADO.
-              },
-            },
-          }),
-        });
-
-        if (geminiResponse.ok) {
-          break;
-        }
-
+        let geminiResponse: Response | null = null;
         const retryableStatuses = [429, 500, 502, 503, 504];
 
-        if (
-          !retryableStatuses.includes(geminiResponse.status) ||
-          attempt === 3
-        ) {
-          break;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            geminiResponse = await fetch(geminiUrl.toString(), {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-goog-api-key": geminiApiKey,
+              },
+              signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+              body: JSON.stringify({
+                contents: [
+                  {
+                    parts: [
+                      { text: prompt },
+                      {
+                        inlineData: {
+                          mimeType: "image/jpeg",
+                          data: imageBase64,
+                        },
+                      },
+                    ],
+                  },
+                ],
+                generationConfig: {
+                  responseMimeType: "application/json",
+                  responseJsonSchema: {
+                    type: "OBJECT",
+                    properties: {
+                      candidates: {
+                        type: "ARRAY",
+                        items: {
+                          type: "OBJECT",
+                          properties: {
+                            candidate_id: { type: "STRING" },
+                            votes: { type: "INTEGER", nullable: true },
+                            readable: { type: "BOOLEAN" },
+                          },
+                          required: ["candidate_id", "votes", "readable"],
+                        },
+                      },
+                      blank_votes: { type: "INTEGER", nullable: true },
+                      null_votes: { type: "INTEGER", nullable: true },
+                      total_votes: { type: "INTEGER", nullable: true },
+                      warnings: {
+                        type: "ARRAY",
+                        items: { type: "STRING" },
+                      },
+                    },
+                    required: [
+                      "candidates",
+                      "blank_votes",
+                      "null_votes",
+                      "total_votes",
+                      "warnings",
+                    ],
+                  },
+                },
+              }),
+            });
+          } catch (error) {
+            if (error instanceof DOMException && error.name === "TimeoutError") {
+              return jsonError(
+                "El reconocimiento tardó demasiado. Inténtalo nuevamente.",
+                504,
+              );
+            }
+
+            return jsonError(
+              "No se pudo contactar el servicio de reconocimiento. Verifica la conexión e inténtalo nuevamente.",
+              502,
+            );
+          }
+
+          if (geminiResponse.ok) {
+            break;
+          }
+
+          if (
+            !retryableStatuses.includes(geminiResponse.status) ||
+            attempt === 3
+          ) {
+            break;
+          }
+
+          await geminiResponse.body?.cancel();
+          await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
         }
 
-        console.warn(
-          `Gemini respondió ${geminiResponse.status}. Reintento ${attempt}/3.`,
-        );
+        if (!geminiResponse?.ok) {
+          if (geminiResponse?.status === 429) {
+            return jsonError(
+              "Se alcanzó el límite de solicitudes del reconocimiento. Inténtalo nuevamente más tarde.",
+              429,
+            );
+          }
 
-        await geminiResponse.body?.cancel();
+          if (geminiResponse?.status === 400) {
+            return jsonError(
+              "Gemini no pudo interpretar la fotografía. Verifica que el acta esté completa y vuelve a intentarlo.",
+              422,
+            );
+          }
 
-        await new Promise((resolve) =>
-          setTimeout(resolve, 1500 * attempt)
-        );
-      }
+          if (
+            geminiResponse?.status === 401 ||
+            geminiResponse?.status === 403 ||
+            geminiResponse?.status === 404
+          ) {
+            return jsonError(
+              "El servicio de reconocimiento no está configurado correctamente.",
+              502,
+            );
+          }
 
-      if (!geminiResponse.ok) {
-        const errorBody = await geminiResponse.text();
+          if (geminiResponse && retryableStatuses.includes(geminiResponse.status)) {
+            return jsonError(
+              "El servicio de reconocimiento está temporalmente saturado. Inténtalo nuevamente en unos minutos.",
+              503,
+            );
+          }
 
-        console.error(
-          "Error de Gemini:",
-          geminiResponse.status,
-          errorBody,
-        );
-
-      if ([429, 500, 502, 503, 504].includes(geminiResponse.status)) {
-        return jsonError(
-          "El servicio de reconocimiento está temporalmente saturado. Inténtalo nuevamente en unos minutos.",
-          503,
-        );
-      }
-
-      return jsonError(
-        "Gemini no pudo procesar la fotografía. Verifica la configuración del servicio.",
-        502,
-      );
-    }
-
-
-        const geminiData = await geminiResponse.json();
-
-        const generatedText =
-          geminiData?.candidates?.[0]?.content?.parts
-            ?.find((part: { text?: string }) =>
-              typeof part.text === "string"
-            )?.text;
-
-        if (typeof generatedText !== "string") {
           return jsonError(
-            "Gemini no devolvió una respuesta de texto válida.",
+            "Gemini no pudo procesar la fotografía. Verifica la configuración del servicio.",
+            502,
+          );
+        }
+
+        let geminiData: unknown;
+        try {
+          geminiData = await geminiResponse.json();
+        } catch {
+          return jsonError(
+            "Gemini devolvió una respuesta incompleta. Inténtalo nuevamente.",
+            502,
+          );
+        }
+
+        if (
+          !isRecord(geminiData) ||
+          !Array.isArray(geminiData.candidates) ||
+          !isRecord(geminiData.candidates[0])
+        ) {
+          return jsonError(
+            "Gemini devolvió una respuesta incompleta. Inténtalo nuevamente.",
+            502,
+          );
+        }
+
+        const generatedCandidate = geminiData.candidates[0];
+        if (
+          !isRecord(generatedCandidate.content) ||
+          !Array.isArray(generatedCandidate.content.parts)
+        ) {
+          return jsonError(
+            "Gemini devolvió una respuesta incompleta. Inténtalo nuevamente.",
+            502,
+          );
+        }
+
+        if (generatedCandidate.finishReason !== "STOP") {
+          return jsonError(
+            "Gemini no pudo completar la lectura de la fotografía. Inténtalo nuevamente.",
+            502,
+          );
+        }
+
+        const generatedText = generatedCandidate.content.parts
+          .map((part: unknown) =>
+            isRecord(part) && typeof part.text === "string" ? part.text : ""
+          )
+          .filter((part: string) => part.length > 0)
+          .join("\n");
+
+        if (!generatedText) {
+          return jsonError(
+            "Gemini no devolvió resultados para la fotografía.",
             502,
           );
         }
@@ -557,11 +619,9 @@ definitivamente. Por tanto, prioriza la precisión y señala cualquier duda.
 
         try {
           ocrData = parseGeminiJson(generatedText);
-        } catch (error) {
-          console.error("Error al interpretar el OCR:", error);
-
+        } catch {
           return jsonError(
-            "La respuesta de Gemini no tiene un formato válido.",
+            "Gemini devolvió datos incompletos o inválidos. Revisa la fotografía e inténtalo nuevamente.",
             502,
           );
         }
@@ -633,20 +693,24 @@ definitivamente. Por tanto, prioriza la precisión y señala cualquier duda.
         let arithmeticValid: boolean | null = null;
 
         if (allCandidateVotesReadable && allTotalsReadable) {
-          calculatedTotal =
-            formResults.reduce(
-              (sum: number, result) => sum + result.votes!,
-              0,
-            ) +
-            ocrData.blank_votes! +
-            ocrData.null_votes!;
+          calculatedTotal = formResults.reduce(
+            (sum, result) => sum + (result.votes ?? 0),
+            ocrData.blank_votes! + ocrData.null_votes!,
+          );
 
-          arithmeticValid = calculatedTotal === ocrData.total_votes;
-
-          if (!arithmeticValid) {
+          if (!Number.isSafeInteger(calculatedTotal)) {
+            calculatedTotal = null;
             warnings.push(
-              "La suma de votos por candidatos, blancos y nulos no coincide con el total del acta.",
+              "No se pudo comprobar la suma porque el resultado excede el rango numérico permitido.",
             );
+          } else {
+            arithmeticValid = calculatedTotal === ocrData.total_votes;
+
+            if (!arithmeticValid) {
+              warnings.push(
+                "La suma de votos por candidatos, blancos y nulos no coincide con el total del acta.",
+              );
+            }
           }
         } else {
           warnings.push(
@@ -674,9 +738,7 @@ definitivamente. Por tanto, prioriza la precisión y señala cualquier duda.
           requires_manual_review: true,
           warnings: [...new Set(warnings)],
         });
-      } catch (error) {
-        console.error("Error inesperado en procesar-acta-ocr:", error);
-
+      } catch {
         return jsonError(
           "Ocurrió un error inesperado al procesar el acta.",
           500,

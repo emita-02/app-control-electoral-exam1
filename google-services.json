@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "952249457842",
+    "project_id": "control-electoral-4f4aa",
+    "storage_bucket": "control-electoral-4f4aa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:952249457842:android:d2efca80c9c3331b12fdab",
+        "android_client_info": {
+          "package_name": "com.controlelectoral.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAMGlRGz_b6c2JWgxGeWc2eJwaOjHfcvZc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

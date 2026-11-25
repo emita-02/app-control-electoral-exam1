@@ -92,22 +92,25 @@ Presentar:
 
 Esperar la aprobación del usuario antes de comenzar otra Feature.
 
-## 3. Catálogo inicial de Features
+## 3. Catálogo de Features
 
-El proyecto se organizará inicialmente en las siguientes funcionalidades:
+El proyecto se organiza en las siguientes 11 funcionalidades, según `docs/fdd/FDD.md`:
 
 | Código | Feature | Descripción |
 |---|---|---|
-| F01 | Autenticación y usuarios | Inicio de sesión, sesiones y roles. |
-| F02 | Gestión territorial | Provincias, cantones, parroquias, recintos y mesas. |
-| F03 | Gestión de personal | Coordinadores, veedores y asignaciones. |
-| F04 | Registro de actas | Captura, registro, validación y corrección de actas. |
-| F05 | OCR e inteligencia artificial | Extracción asistida de información mediante Gemini. |
-| F06 | Funcionamiento sin conexión | Persistencia local y sincronización. |
-| F07 | Seguimiento electoral | Progreso, resultados y Exit Poll. |
-| F08 | Monitoreo de errores | Registro y seguimiento de fallos mediante Crashlytics. |
+| F01 | Autenticación y autorización | Inicio de sesión, perfil, roles y recuperación de contraseña. |
+| F02 | Gestión territorial | Consulta de provincias, cantones, parroquias, recintos y mesas. |
+| F03 | Recintos y mesas electorales | Registro y consulta de recintos y mesas. |
+| F04 | Gestión de personal | Coordinadores, veedores, asignaciones y reemplazos. |
+| F05 | Registro de actas | Registro de actas de Alcaldía y Prefectura. |
+| F06 | Evidencias fotográficas y GPS | Captura de fotografías, control de nitidez y geolocalización. |
+| F07 | Validación y corrección | Validación aritmética, correcciones y trazabilidad. |
+| F08 | OCR | Extracción asistida con Gemini y revisión humana. |
+| F09 | Funcionamiento offline y sincronización | Persistencia local, operaciones pendientes y sincronización. |
+| F10 | Paneles y Exit Poll | Seguimiento del avance, resultados y conteo en vivo. |
+| F11 | Monitoreo y gestión de errores | Registro y seguimiento de fallos mediante Crashlytics. |
 
-Este catálogo es una planificación inicial. Los alcances definitivos deben contrastarse con los requisitos aprobados.
+Los alcances detallados, el estado y la verificación de cada funcionalidad se documentan en `docs/fdd/FDD.md`.
 
 ## 4. Uso de Skills
 

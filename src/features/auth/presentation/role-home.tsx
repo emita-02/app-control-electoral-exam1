@@ -19,10 +19,18 @@ export function RoleHome({
   role,
   onOpenTerritory,
   onOpenPersonnel,
+  onOpenEvidence,
+  onOpenActRegistration,
+  onOpenDashboard,
+  onOpenOfflineHistory,
 }: {
   role: UserRole;
   onOpenTerritory?: () => void;
   onOpenPersonnel?: () => void;
+  onOpenEvidence?: () => void;
+  onOpenActRegistration?: () => void;
+  onOpenDashboard?: () => void;
+  onOpenOfflineHistory?: () => void;
 }) {
   const { signOut } = useAuthActions();
   const { error, profile } = useAppSelector((state) => state.auth);
@@ -94,6 +102,24 @@ export function RoleHome({
           }
           onPress={onOpenPersonnel}
         />
+      ) : null}
+      {role === userRoles.observer && onOpenActRegistration ? (
+        <PrimaryButton
+          label="Registrar acta electoral"
+          onPress={onOpenActRegistration}
+        />
+      ) : null}
+      {role === userRoles.observer && onOpenEvidence ? (
+        <PrimaryButton
+          label="Capturar evidencia fotográfica"
+          onPress={onOpenEvidence}
+        />
+      ) : null}
+      {onOpenDashboard ? (
+        <PrimaryButton label="Consultar panel de resultados" onPress={onOpenDashboard} />
+      ) : null}
+      {onOpenOfflineHistory ? (
+        <PrimaryButton label="Registros pendientes de sincronización" onPress={onOpenOfflineHistory} />
       ) : null}
 
       {error ? <AuthNotice message={error} /> : null}

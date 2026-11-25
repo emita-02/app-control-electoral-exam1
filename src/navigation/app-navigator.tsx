@@ -5,6 +5,7 @@ import {
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
+import { useEffect } from 'react';
 
 import ForgotPasswordScreen from '@/features/auth/presentation/screens/forgot-password-screen';
 import LoginScreen from '@/features/auth/presentation/screens/login-screen';
@@ -14,7 +15,18 @@ import { userRoles } from '@/features/auth/domain/user-profile';
 import { LoadingScreen } from '@/features/auth/presentation/components/auth-ui';
 import { TerritoryScreen } from '@/features/territory/presentation/territory-screen';
 import { PersonnelManagementScreen } from '@/features/personnel/presentation/personnel-management-screen';
-import { useAppSelector } from '@/store/store';
+import { EvidenceCaptureScreen } from '@/features/evidence/presentation/evidence-capture-screen';
+import { ActRegistrationScreen } from '@/features/acts/presentation/act-registration-screen';
+import { ActOcrReviewScreen } from '@/features/acts/presentation/act-ocr-review-screen';
+import { ActCorrectionScreen } from '@/features/acts/presentation/act-correction-screen';
+import { DashboardScreen } from '@/features/dashboard/presentation/dashboard-screen';
+import { OfflineHistoryScreen } from '@/features/offline/presentation/offline-history-screen';
+import {
+  loadOfflineOperations,
+  setOnline,
+  syncOfflineOperations,
+} from '@/features/offline/presentation/offline-slice';
+import { appDependencies, useAppDispatch, useAppSelector } from '@/store/store';
 import type {
   AuthStackParamList,
   RootStackParamList,
@@ -43,6 +55,11 @@ const linking: LinkingOptions<RootStackParamList> = {
           ProvincialHome: 'provincial',
           TerritorialStructure: 'territory',
           PersonnelManagement: 'personnel',
+          Dashboard: 'dashboard',
+          OfflineHistory: 'pending',
+          ActRegistration: 'act-registration',
+          ActOcrReview: 'act-ocr/:actId/:evidenceId',
+          ActCorrection: 'act-correction/:actId',
           PrecinctCoordinatorHome: 'precinct-coordinator',
           ObserverHome: 'observer',
         },
@@ -74,6 +91,8 @@ function ProvincialHomeScreen({
       role={userRoles.provincialCoordinator}
       onOpenTerritory={() => navigation.navigate('TerritorialStructure')}
       onOpenPersonnel={() => navigation.navigate('PersonnelManagement')}
+      onOpenDashboard={() => navigation.navigate('Dashboard')}
+      onOpenOfflineHistory={() => navigation.navigate('OfflineHistory')}
     />
   );
 }
@@ -85,12 +104,59 @@ function PrecinctCoordinatorHomeScreen({
     <RoleHome
       role={userRoles.precinctCoordinator}
       onOpenPersonnel={() => navigation.navigate('PersonnelManagement')}
+      onOpenDashboard={() => navigation.navigate('Dashboard')}
+      onOpenOfflineHistory={() => navigation.navigate('OfflineHistory')}
     />
   );
 }
 
-function ObserverHomeScreen() {
-  return <RoleHome role={userRoles.observer} />;
+function ObserverHomeScreen({
+  navigation,
+}: NativeStackScreenProps<WorkspaceStackParamList, 'ObserverHome'>) {
+  return (
+    <RoleHome
+      role={userRoles.observer}
+      onOpenActRegistration={() => navigation.navigate('ActRegistration')}
+      onOpenDashboard={() => navigation.navigate('Dashboard')}
+      onOpenOfflineHistory={() => navigation.navigate('OfflineHistory')}
+    />
+  );
+}
+
+function useOfflineBootstrap(authenticated: boolean) {
+  const dispatch = useAppDispatch();
+
+  useEffect(() => {
+    if (!authenticated) {
+      return;
+    }
+
+    let active = true;
+    const refresh = async () => {
+      const online = await appDependencies.networkStatus.isOnline();
+      if (!active) {
+        return;
+      }
+      dispatch(setOnline(online));
+      void dispatch(loadOfflineOperations());
+      if (online) {
+        void dispatch(syncOfflineOperations());
+      }
+    };
+    void refresh();
+
+    const unsubscribe = appDependencies.networkStatus.subscribe((online) => {
+      dispatch(setOnline(online));
+      if (online) {
+        void dispatch(syncOfflineOperations());
+      }
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [authenticated, dispatch]);
 }
 
 function WorkspaceNavigator() {
@@ -111,6 +177,8 @@ function WorkspaceNavigator() {
             : 'ObserverHome'
       }
       screenOptions={{ headerShown: false, animation: 'fade' }}>
+      <WorkspaceStack.Screen name="Dashboard" component={DashboardScreen} />
+      <WorkspaceStack.Screen name="OfflineHistory" component={OfflineHistoryScreen} />
       {role === userRoles.provincialCoordinator ? (
         <>
           <WorkspaceStack.Screen
@@ -137,10 +205,32 @@ function WorkspaceNavigator() {
             name="PersonnelManagement"
             component={PersonnelManagementScreen}
           />
+          <WorkspaceStack.Screen
+            name="ActCorrection"
+            component={ActCorrectionScreen}
+          />
         </>
       ) : null}
       {role === userRoles.observer ? (
-        <WorkspaceStack.Screen name="ObserverHome" component={ObserverHomeScreen} />
+        <>
+          <WorkspaceStack.Screen name="ObserverHome" component={ObserverHomeScreen} />
+          <WorkspaceStack.Screen
+            name="EvidenceCapture"
+            component={EvidenceCaptureScreen}
+          />
+          <WorkspaceStack.Screen
+            name="ActRegistration"
+            component={ActRegistrationScreen}
+          />
+          <WorkspaceStack.Screen
+            name="ActOcrReview"
+            component={ActOcrReviewScreen}
+          />
+          <WorkspaceStack.Screen
+            name="ActCorrection"
+            component={ActCorrectionScreen}
+          />
+        </>
       ) : null}
     </WorkspaceStack.Navigator>
   );
@@ -150,6 +240,7 @@ export function AppNavigator() {
   const { passwordRecovery, profile, status } = useAppSelector((state) => state.auth);
   const showWorkspace =
     status === 'authenticated' && profile !== null && !passwordRecovery;
+  useOfflineBootstrap(showWorkspace);
 
   if (status === 'loading') {
     return <LoadingScreen />;
