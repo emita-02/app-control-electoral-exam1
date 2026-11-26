@@ -77,28 +77,71 @@ function readArray(value: unknown): unknown[] {
 function readCreatedPollingPlace(value: unknown): PollingPlace {
   const response = readRecord(value);
   const record = readRecord(response.pollingPlace);
+  const electoralTables = record.electoral_tables;
   return {
     id: readInteger(record.id),
     code: readNullableString(record.code),
     name: readString(record.name),
     address: readNullableString(record.address),
-    electoralTables: [],
+    // Las versiones anteriores de `registrar-recinto` no devolvían mesas;
+    // en ese caso el slice refresca la jerarquía desde Supabase.
+    electoralTables:
+      electoralTables === undefined || electoralTables === null
+        ? []
+        : readArray(electoralTables).map(mapElectoralTable),
   };
 }
 
-async function getFunctionErrorMessage(error: { context: unknown }): Promise<string> {
-  if (error.context instanceof Response) {
+function isResponseLike(
+  value: unknown,
+): value is Pick<Response, 'clone' | 'status' | 'text'> {
+  return (
+    isRecord(value) &&
+    typeof value.status === 'number' &&
+    typeof value.clone === 'function' &&
+    typeof value.text === 'function'
+  );
+}
+
+async function getFunctionErrorMessage(error: {
+  name?: string;
+  message?: string;
+  context?: unknown;
+}): Promise<string> {
+  const fallback = 'No se pudo registrar el recinto. Verifica el detalle del servidor.';
+  const context = error.context;
+
+  if (isResponseLike(context)) {
+    const details: string[] = [];
     try {
-      const body: unknown = await error.context.clone().json();
-      if (isRecord(body) && typeof body.error === 'string') {
-        return body.error;
+      const body: unknown = await context.clone().json();
+      if (isRecord(body)) {
+        for (const key of ['error', 'message', 'detail', 'code'] as const) {
+          const value = body[key];
+          if (typeof value === 'string' && value.trim()) {
+            details.push(value.trim().slice(0, 300));
+          }
+        }
       }
     } catch {
-      return 'No se pudo registrar el recinto. Verifica tu conexión e inténtalo nuevamente.';
+      try {
+        const text = await context.clone().text();
+        if (text.trim()) {
+          details.push(text.trim().slice(0, 300));
+        }
+      } catch {
+        // Se conserva el HTTP status aunque el cuerpo no se pueda leer.
+      }
     }
+
+    const suffix = details.length > 0 ? `: ${details.join(' | ')}` : '';
+    return `${fallback} (HTTP ${context.status}${suffix}).`;
   }
 
-  return 'No se pudo registrar el recinto. Verifica tu conexión y tus permisos.';
+  const name = typeof error.name === 'string' ? error.name : 'Error';
+  const message = typeof error.message === 'string' ? error.message.trim() : '';
+  const suffix = message ? `: ${message.slice(0, 300)}` : '';
+  return `${fallback} (${name}${suffix}).`;
 }
 
 function mapElectoralTable(value: unknown): ElectoralTable {
@@ -192,6 +235,7 @@ export class SupabaseTerritoryRepository implements ProvinceTerritoryRepository 
           name: input.name,
           code: input.code,
           address: input.address,
+          tableCount: input.tableCount,
         },
       },
     );

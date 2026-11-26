@@ -43,6 +43,7 @@ export function EvidenceCaptureScreen({
     captureStatus,
     uploadError,
     uploadStatus,
+    uploadedEvidence,
   } = useAppSelector((state) => state.evidence);
   // Solo se pueden registrar fotografías tomadas para esta acta.
   const captures = allCaptures.filter((capture) => capture.actId === actId);
@@ -181,10 +182,8 @@ export function EvidenceCaptureScreen({
         navigation.navigate('OfflineHistory');
         return;
       }
-      navigation.navigate('ActOcrReview', {
-        actId: result.actId,
-        evidenceId: result.evidenceId,
-      });
+      // La fotografía se guarda y el flujo termina aquí. El flujo OCR (F08)
+      // permanece en el código, pero la captura ya no navega a su revisión.
     } catch {
       // El mensaje se muestra desde `state.evidence.uploadError`.
     }
@@ -206,7 +205,7 @@ export function EvidenceCaptureScreen({
     <AppShell
       header={
         <RoleHeader
-          badge={`Acta #${actId}`}
+          badge={actId < 0 ? 'Acta local' : `Acta #${actId}`}
           title="Evidencia fotográfica"
           subtitle="Captura directa con cámara, control de nitidez y sello GPS."
           onBack={() => navigation.goBack()}
@@ -218,6 +217,12 @@ export function EvidenceCaptureScreen({
       {uploadError ? <AuthNotice message={uploadError} /> : null}
       {uploadStatus === 'loading' ? (
         <AuthNotice success message="Subiendo y registrando evidencia segura…" />
+      ) : null}
+      {uploadedEvidence ? (
+        <AuthNotice
+          success
+          message="Fotografía guardada correctamente."
+        />
       ) : null}
 
       {settingsRequired ? (
@@ -355,7 +360,7 @@ export function EvidenceCaptureScreen({
                 Capturada: {new Date(capture.capturedAt).toLocaleString('es-EC')}
               </Text>
               <PrimaryButton
-                label="Registrar evidencia y continuar al OCR →"
+                label="Guardar fotografía"
                 loading={uploadStatus === 'loading'}
                 disabled={uploadStatus === 'loading'}
                 onPress={() => void registerEvidence(capture)}

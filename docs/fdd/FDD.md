@@ -64,21 +64,52 @@ Los usuarios solamente pueden gestionar o consultar información dentro de su á
 
 ### F03 — Recintos y mesas electorales
 
-Permite gestionar los recintos electorales y sus respectivas mesas.
+Permite gestionar los recintos electorales y sus respectivas mesas. Cada mesa debe estar asociada a su recinto y a la estructura territorial.
 
-Cada mesa debe estar asociada a su recinto y estructura territorial.
+**Requisitos y criterios de aceptación:** RF-04. El coordinador provincial registra recintos solo en su jurisdicción, indica la cantidad de mesas y obtiene `Mesa 1…Mesa N` creadas automáticamente, relacionadas con `polling_places.id`. La operación no deja recintos parciales.
 
-#### Alcance implementado: registro de recintos
+**Referencias de arquitectura:** ADR-01 (Supabase como backend), ADR-03 (Clean Architecture, Redux Toolkit, React Hook Form y Zod), ADR-07 (React Navigation y Uniwind). No se introducen tecnologías ni dependencias nuevas.
 
-- El coordinador provincial puede registrar un recinto seleccionando una parroquia ya existente dentro de su provincia.
-- El nombre es obligatorio; el código y la dirección son opcionales y corresponden a columnas existentes en `polling_places`.
-- La Edge Function `registrar-recinto` valida la sesión activa, el rol, la provincia del perfil y la relación `parishes → cantons → provinces` antes de insertar en `polling_places`.
-- La consulta de mesas de F02 se conserva; no se crean ni modifican mesas.
-- No se modificaron el esquema ni las políticas RLS. La inserción protegida se ejecuta en la Edge Function con la credencial de servidor, que no se expone al cliente.
+#### Alcance implementado
 
-**Estado de F03:** implementación completada y Edge Function activa en remoto; pendiente verificar el flujo con una cuenta autorizada.
+- El formulario «Agregar recinto» incorpora el campo obligatorio **Cantidad de mesas electorales**. Zod exige un entero de **1 a 100** y rechaza vacío, cero, negativos, decimales y valores fuera de rango con el mensaje «Ingresa una cantidad de mesas de 1 a 100.»; se conservan las validaciones de parroquia, nombre, código y dirección.
+- El caso de uso vuelve a validar el rango antes de llamar al repositorio; la Edge Function lo valida una tercera vez y la RPC una cuarta. El máximo de 100 es una decisión aprobada por el grupo.
+- `registrar-recinto` conserva la validación de sesión, cuenta activa, rol `coordinador_provincial`, provincia del perfil y jerarquía `parishes → cantons → provinces`.
+- La creación del recinto y de sus mesas se concentra en la RPC `registrar_recinto_con_mesas` (`SECURITY DEFINER`, `search_path = ''`). Ambas inserciones ocurren en una sola transacción: si falla una mesa, se revierte el recinto. No se usa borrado compensatorio.
+- La RPC repite en servidor las validaciones de sesión, perfil activo, rol, jurisdicción provincial y cantidad. El rol se compara con `IS DISTINCT FROM`, de modo que un rol `NULL` también se rechaza. Devuelve el recinto con `electoral_tables` para que el repositorio conserve el contrato `{ pollingPlace: { id, code, name, address, electoral_tables: [{ id, table_number }] } }`. La Edge Function exige además que el número y la numeración de las mesas devueltas coincidan con lo solicitado.
+- La RPC se crea con `ALTER FUNCTION ... OWNER TO postgres` para que `SECURITY DEFINER` tenga permisos de inserción sin depender de `GRANT` de `INSERT` al rol `authenticated`. Los únicos `REVOKE`/`GRANT` de la migración son sobre esa función nueva; no se tocan privilegios de tablas ni políticas RLS.
+- Los errores de PostgreSQL se registran completos en el servidor (mensaje, `code`, `details`, `hint`) y al cliente solo se le devuelve un mensaje seguro según SQLSTATE: `23505` → 409, `42501` → 403, `22023` → 400 ("cantidad de mesas de 1 a 100"), resto → 500. `parseRpcResult` devuelve un error genérico si la respuesta no coincide con el contrato.
+- La consulta de F02 y la pantalla de estructura territorial se conservan: muestran recintos, total de mesas y la numeración individual `Mesa N` desde registros reales de Supabase. Después de registrar se refresca la jerarquía para reflejar las mesas creadas.
+- No se eliminan ni modifican mesas con asignaciones o actas. No se crean tablas, columnas, nuevas relaciones ni políticas RLS.
 
-**Verificación:** lint dirigido y TypeScript de la aplicación completados. La configuración Supabase JSONC es válida y requiere JWT para la función. `registrar-recinto` aparece `ACTIVE` en remoto. No se pudo validar la función con el runtime local porque Deno y Docker/Podman no están instalados; no se modificaron datos de usuario, esquema ni políticas RLS.
+#### Plan de implementación
+
+1. `tableCount` en el contrato del dominio y validación en el caso de uso.
+2. Envío de `tableCount` y mapeo opcional de `electoral_tables` en el repositorio.
+3. Campo numérico en el formulario y refresco de la jerarquía tras el registro.
+4. Validación y llamada a la RPC en `registrar-recinto`, manteniendo las comprobaciones de seguridad previas.
+5. Migración SQL propuesta con la RPC atómica (no aplicada).
+6. Actualización de esta sección del FDD.
+
+#### Pruebas
+
+- `src/features/territory/application/create-polling-place.test.mjs`: normalización, extremos del rango (`1` y `100`), rechazo de vacío/`0`/negativos/decimales/no seguros/`101` y conservación de las validaciones de parroquia y nombre.
+- Comprobación estática de la RPC y de la Edge Function; sin datos electorales reales ni cuentas remotas.
+
+#### Resultados de la verificación
+
+- `node --test src/**/*.test.mjs`: **35/35** pruebas superadas tras el ajuste de F03 (5 nuevas de F03 en total); **40/40** tras añadir las pruebas de F04.
+- `npx tsc -p tsconfig.check.json --noEmit`: sin errores.
+- `npx expo lint`: sin errores.
+- `git diff --check`: sin errores de whitespace (solo avisos de LF→CRLF preexistentes).
+- `deno check --no-lock index.ts` en `supabase/functions/registrar-recinto`: exit 0, sin errores.
+- No se aplicó la migración, no se desplegó la Edge Function, no se ejecutaron builds ni se probó contra Supabase remoto.
+
+**Estado de F03:** implementado localmente, **pendiente de revisión y aprobación**. Para cerrarlo se necesita autorización para aplicar `20261126130000_registrar_recinto_con_mesas.sql`, desplegar `registrar-recinto` y probar con una cuenta de coordinador provincial.
+
+**Información remota pendiente:** confirmar en el esquema remoto los tipos de `polling_places.id`, `polling_places.parish_id` y `electoral_tables.id` (la RPC propuesta usa `bigint` siguiendo el patrón de F05), la definición exacta de `electoral_tables.table_number`, que `get_my_role()` devuelve `coordinador_provincial` y que el propietario de las tablas es `postgres` o que `postgres` tiene `bypassrls`.
+
+**Límite de mesas por recinto:** aprobado en **100**. No aparecía en RF-04, el FDD ni los ADR, por lo que se documenta aquí como decisión del grupo. Se aplica en las cuatro capas (formulario, caso de uso, Edge Function y RPC) con el mismo mensaje: «Ingresa una cantidad de mesas de 1 a 100.». Sustituye la propuesta anterior de 1000, que queda descartada.
 
 ### F04 — Gestión de personal
 
@@ -100,13 +131,21 @@ El reemplazo debe conservar los registros electorales anteriores y respetar las 
 - El reemplazo cierra las asignaciones anteriores con `ended_at`, `ended_by` y `end_reason`, y registra las nuevas filas en `watcher_assignments`. No elimina asignaciones históricas ni actas. `registered_by` se conserva siempre.
 - S-04: el veedor que recibe una mesa hereda el acceso para revisar, confirmar el OCR y corregir las actas existentes de esa mesa. La autorización depende de la asignación vigente a la mesa, no de ser el autor original; el coordinador de recinto mantiene acceso a su recinto. No requiere columnas nuevas.
 - La Edge Function `gestionar-personal` valida sesión, cuenta activa, rol, provincia/recinto y pertenencia de las mesas. La creación de usuarios usa Supabase Auth Admin del lado servidor; la clave de servicio no se incluye en la aplicación.
-- Se usan las tablas existentes `profiles` y `watcher_assignments`; no se modifica el esquema ni las políticas RLS.
-- Los formularios no recopilan cédula ni teléfono: `profiles` no contiene columnas para esos datos y el alcance aprobado no autoriza cambiar el esquema.
+- El cliente envía `roleId` y `watcherRoleId`; la función valida el valor contra `ALLOWED_ROLE_IDS` (`coordinador_recinto: 2`, `veedor: 3`) y consulta `roles` por `code`, con fallback por `id`. Estos identificadores deben confirmarse contra el catálogo remoto antes de aceptarlos como definitivos.
+- Los formularios recopilan cédula y teléfono (RF-02) y los envían a `gestionar-personal`, que los inserta en `profiles`. La migración propuesta `20261125130000_personnel_contact_fields.sql` agrega `id_card` y `phone`; **no está aplicada**. Hasta aplicarla, una versión desplegada con este código fallará si esas columnas no existen.
+- Se usan las tablas existentes `profiles` y `watcher_assignments`; esta ronda no modifica el esquema remoto ni las políticas RLS.
+- Los fallos de `profiles`, `electoral_tables` y `watcher_assignments` conservan `message`, `code`, `details` y `hint` de PostgREST y se reportan etiquetados por consulta. El diagnóstico definitivo sigue pendiente de reproducirlos con una cuenta autorizada; no se ocultan tras mensajes genéricos.
 - El enlace de invitación se procesa como una recuperación de contraseña para que el usuario establezca su contraseña desde la aplicación.
+- **Selección de mesas al crear veedores:** el formulario del coordinador de recinto incluye una selección múltiple de mesas (`Mesa 1`, `Mesa 2`, …) tomadas de `overview.electoralTables`, es decir, de registros reales de su recinto. Las mesas con asignación activa se muestran deshabilitadas con el nombre del veedor actual. Zod exige al menos una mesa, sin duplicados; el caso de uso repite la validación y la Edge Function la ejecuta en servidor.
+- El payload de `create_member` incorpora `electoralTableIds`. La Edge Function valida sesión, cuenta activa, rol `coordinador_recinto`, pertenencia del coordinador al recinto, que todas las mesas sean de ese recinto y que ninguna tenga asignación activa; inserta cada asignación con `assigned_by = auth.uid()`. La validación se repite justo antes de escribir, después de la invitación de Auth.
+- **Fallos parciales:** la invitación de Auth y las inserciones en PostgreSQL no son una sola transacción. Si falla el perfil se elimina la cuenta invitada (comportamiento previo). Si fallan las asignaciones se intentan borrar el perfil y la cuenta, incluso si el primer borrado falla; si la limpieza no es posible se devuelve un error que pide intervención del administrador. El mensaje de éxito solo se envía cuando invitación, perfil y asignaciones terminan correctamente.
+- El reemplazo sigue siendo una operación independiente: cierra la asignación anterior con `ended_at`, `ended_by` y `end_reason`, sin borrar asignaciones ni actas, y mantiene `registered_by`. S-04 se conserva: la autorización depende de la asignación vigente, no del autor original del acta.
 
-**Estado de F04:** implementación completada en cliente y en la Edge Function (incluido S-04), con `gestionar-personal` activa en remoto según información previa; pendiente validar la plantilla/correo, la URL de invitación, el HTTP 500 sin reproducir y probar los flujos con cuentas autorizadas en Android. La configuración local declara `controlelectoral://reset-password` como URL de redirección; la configuración remota no se modificó.
+**Estado de F04:** implementado localmente con selección múltiple de mesas al crear veedores y limpieza compensatoria de fallos parciales. Incluye S-04, cédula/teléfono en cliente y Edge Function y resolver `roleId` con validación estricta. La versión instrumentada **no se desplegó**. Pendiente aplicar la migración de contacto, desplegar `gestionar-personal`, confirmar `roles.id`/`roles.code`, reproducir el HTTP 500 con logs, validar la plantilla/correo y la URL de invitación, y probar los flujos con cuentas autorizadas en Android. La configuración local declara `controlelectoral://reset-password` como URL de redirección; la configuración remota no se modificó.
 
-**Verificación:** `npx expo lint` y la comprobación TypeScript limitada a `src/` pasaron. `npx expo export --platform android` generó el bundle Android. `npx supabase config validate` declaró las seis funciones sin errores. La regla S-04 se cubre con pruebas de dominio. La comprobación TypeScript completa sigue sin incluir los tipos/imports de Deno de las Edge Functions; el runtime de estas no se pudo ejecutar porque Deno y Docker/Podman no están instalados. No se modificaron datos de usuario, esquema ni políticas RLS.
+**Limitación conocida:** la comprobación de "un veedor activo por mesa" se hace en la Edge Function, no mediante una restricción única de base de datos. Entre la validación y el inserto existe una ventana pequeña en la que otra petición podría asignar la misma mesa; no se añadió un índice único parcial ni una RPC porque serían cambios no autorizados sobre el esquema. Se propone revisar esa garantía a nivel de base de datos antes de producción.
+
+**Verificación:** `node --test src/**/*.test.mjs` pasó **40/40** (5 pruebas nuevas de F04: normalización, mesa obligatoria, duplicados/ids inválidos, coordinador sin mesas y validaciones de contacto). `npx tsc -p tsconfig.check.json --noEmit` y `npx expo lint` pasaron. `deno check --no-lock index.ts` en `registrar-recinto` pasó; en `gestionar-personal` persisten **17 errores preexistentes** por la ausencia de tipos generados de Supabase (`never`/`never[]`), sin nuevos errores introducidos por este cambio. No se ejecutaron builds; no se modificaron datos de usuario, esquema ni políticas RLS. La regla S-04 se cubre con pruebas de dominio. Falta probar la creación con veedor y mesas contra Supabase con una cuenta autorizada.
 
 ### F05 — Registro de actas
 
@@ -163,8 +202,9 @@ La ubicación fuera del recinto genera una advertencia y no un bloqueo automáti
 - Cada captura aceptada se copia al directorio persistente `Paths.document/evidence` mediante `ExpoEvidenceFileStore` (API de `expo-file-system` v58). Esa ruta durable es la que se guarda en Redux, se encola en SQLite y se usa para la carga; no depende de la URI temporal de la cámara.
 - La carga usa el bucket privado real `act-evidence`, con ruta `${actId}/${uuid}.jpg` y compresión JPEG. La Edge Function `registrar-evidencia`, desplegada en remoto, valida sesión, cuenta activa, rol `veedor`, asignación vigente a la mesa del acta y existencia del archivo; registra `act_evidence` con clave de servicio solo en servidor y es idempotente por `storage_path`.
 - La ubicación fuera del recinto produce una advertencia heurística en el panel (distancia al centroide de evidencias > 1.000 m), nunca un bloqueo automático, coherente con S-02. No se modificaron esquema, RLS ni datos.
+- La pantalla inicial del veedor ofrece una única tarjeta «Registrar acta y capturar evidencia», que abre F05. El formulario muestra el paso 5 «Evidencia fotográfica y GPS» con el botón «Guardar acta y tomar foto →»; la cámara se alcanza al guardar, cuando existe un `actId` real o un ID local negativo. Se eliminó la tarjeta independiente porque la ruta `EvidenceCapture` exige ese identificador.
 
-**Estado de F06:** captura, persistencia local durable, carga protegida y metadatos integrados con F05/F08/F09. Cada captura registra el `actId` para el que se tomó y la pantalla solo ofrece las fotografías de esa acta; se eliminó el uso de `captures[0]` global. Pendiente de prueba en dispositivo Android, calibración del umbral, validación con el bucket remoto usando una cuenta autorizada y la advertencia GPS de S-02 (no hay coordenadas de recinto verificadas en el esquema).
+**Estado de F06:** captura, persistencia local durable, carga protegida y metadatos integrados con F05/F08/F09. Cada captura registra el `actId` para el que se tomó y la pantalla solo ofrece las fotografías de esa acta; se eliminó el uso de `captures[0]` global. La entrada desde el inicio del veedor y el paso visible de foto dentro del formulario quedan corregidos localmente; las actas offline con ID negativo ya permiten captura y encolamiento. Pendiente de prueba en dispositivo Android, calibración del umbral, validación con el bucket remoto usando una cuenta autorizada y la advertencia GPS real de S-02 (no hay coordenadas de recinto verificadas en el esquema).
 
 **Verificación:** las seis pruebas unitarias dirigidas pasaron; ESLint y TypeScript limitado a `src/` pasaron; Expo Doctor aprobó 20/20 comprobaciones y el bundle Android se exportó correctamente. La función `registrar-evidencia` aparece `ACTIVE` en remoto. No se validó una carga real contra el bucket remoto.
 
@@ -241,6 +281,7 @@ La estrategia respeta ADR-02.
 - `SQLiteOfflineQueue` conserva operaciones `register_act`, `upload_evidence`, `process_ocr`, `confirm_ocr`, `apply_correction` y `exit_poll`, con estado, intentos, error y fecha. `local_state` guarda los mapas de identificadores locales a remotos, el catálogo cacheado por veedor y los resultados/revisiones de OCR.
 - `NetInfoNetworkStatus` detecta conectividad y el bootstrap de la sesión sincroniza automáticamente al recuperar red. `OfflineSyncWorker` ejecuta dos fases obligatorias (ADR-02): fase 1 de carga (`register_act` → `upload_evidence` → `process_ocr`, incluido el OCR generado durante la misma pasada) y fase 2 de cierre (`confirm_ocr`, `apply_correction`, `exit_poll`). Registra huellas de idempotencia, aplica retroceso exponencial acotado (1–16 min, máximo 5 intentos) y no procesa operaciones creadas por otra cuenta.
 - La fotografía se copia al directorio persistente del dispositivo antes de encolarse; la cola conserva esa ruta durable, no la URI temporal de la cámara.
+- `captureEvidence` y `uploadEvidenceForAct` aceptan IDs de acta negativos: las fotos tomadas sin conexión se encolan aunque la red vuelva antes de sincronizar, y el worker resuelve el ID remoto con `act_id_map` antes de subirlas.
 - La pantalla `OfflineHistory` muestra pendientes, permite sincronizar o reintentar y ofrece las revisiones de OCR ya generadas. El reintento manual reinicia el contador y limpia el retroceso. Las operaciones se envían con la sesión del usuario y las validaciones del servidor.
 - **S-03 (Last-Write-Wins) aún no está implementado de extremo a extremo.** No existe en el esquema remoto verificado una columna de versión/actualización por acta que permita comparar la modificación local contra la remota sin inventar contratos. Se propone una migración en la sección 7; mientras tanto, una edición concurrente puede sobrescribir otra.
 
@@ -268,8 +309,9 @@ Los datos mostrados deben respetar los permisos de acceso.
 - El Exit Poll se registra mediante la Edge Function `registrar-encuesta`, desplegada en remoto, que valida sesión, rol de coordinador, jurisdicción de la mesa, dignidad y candidatura. Sin conexión, la respuesta se encola y se sincroniza después.
 - Las advertencias GPS son heurísticas (centroide de evidencias, umbral de 1.000 m) y no bloquean registros, de acuerdo con S-02.
 - La corrección de actas se abre desde las actas recientes para veedor y coordinador de recinto, reutilizando F07.
+- Según la matriz de roles acordada, `Dashboard` ya no se registra para `veedor`; solo lo reciben coordinador provincial y coordinador de recinto. El coordinador de recinto mantiene el filtro por su `polling_place_id`, por lo que no ve el consolidado provincial ni otros recintos.
 
-**Estado de F10:** panel por rol y Exit Poll integrados con persistencia real; los resultados ya no incluyen actas no aprobadas. Pendiente validar agregaciones y permisos con cuentas autorizadas y datos electorales de prueba.
+**Estado de F10:** panel por rol y Exit Poll integrados con persistencia real; los resultados ya no incluyen actas no aprobadas. La navegación del veedor ya no ofrece dashboard. Pendiente validar agregaciones y permisos con cuentas autorizadas y datos electorales de prueba; el Exit Poll en tiempo real quedó fuera de esta ronda.
 
 **Verificación:** ESLint y TypeScript limitado a `src/` pasaron; Expo Doctor aprobó 20/20 comprobaciones y el bundle Android se exportó. La función `registrar-encuesta` aparece `ACTIVE` en remoto. No se consultaron resultados reales desde un dispositivo.
 
@@ -303,7 +345,7 @@ Se utiliza Firebase Crashlytics para facilitar el seguimiento y análisis de pro
 
 **Pendiente:** ejecutar la compilación EAS, instalar la compilación release y confirmar la recepción real de un evento en Crashlytics. No se generó APK ni se inventaron credenciales.
 
-**Verificación de esta ronda:** `npx expo-doctor` 20/20; `npx tsc --noEmit -p tsconfig.src.json` pasó; ESLint dirigido a `App.tsx`, `store.ts`, `src/features/monitoring` y `src/navigation` pasó; `npx expo export --platform android --no-minify` generó el bundle sin el aviso anterior de `google-services.json`; `npx expo config --type prebuild --json` resolvió el paquete y la ruta del archivo; el prebuild de verificación aplicó la configuración nativa esperada. No se recibió un evento real en Crashlytics porque no se compiló ni instaló una versión release.
+**Verificación de esta ronda:** `npx expo-doctor` 20/20; `npx tsc --noEmit -p tsconfig.check.json` pasó; ESLint dirigido a `App.tsx`, `store.ts`, `src/features/monitoring` y `src/navigation` pasó; `npx expo export --platform android --no-minify` generó el bundle sin el aviso anterior de `google-services.json`; `npx expo config --type prebuild --json` resolvió el paquete y la ruta del archivo; el prebuild de verificación aplicó la configuración nativa esperada. No se recibió un evento real en Crashlytics porque no se compiló ni instaló una versión release.
 
 ## 4. Reglas generales del negocio
 
@@ -345,20 +387,20 @@ Esta sección registra la ronda de correcciones posteriores a la auditoría. Nin
 |---|---|---|---|---|
 | F01 | Sin cambios funcionales nuevos. Se documenta RF-03 como no implementado. | `auth-repository.ts`, `auth-context.tsx` | TypeScript y ESLint de `src/` | Implementado parcialmente; pendiente de cuenta autorizada y cambio obligatorio de clave |
 | F02 | Sin cambios funcionales nuevos. Territorio sigue dependiente de red. | `supabase-territory-repository.ts`, `territory-screen.tsx` | TypeScript y ESLint | Parcial; pendiente caché offline y verificación remota |
-| F03 | `config.jsonc` ahora declara las seis Edge Functions (antes solo tres). | `supabase/config.jsonc` | `npx supabase config validate` | Configuración local válida; HTTP 500 sin reproducir, sin logs remotos |
-| F04 | S-04: el nuevo veedor hereda acceso por asignación vigente; `registered_by` se conserva. Además, `config.jsonc` declara las seis funciones. | `gestionar-personal/index.ts`, `confirmar-resultados/index.ts`, `config.jsonc` | Pruebas de dominio S-04, config validate, TypeScript/ESLint | Corregido localmente; pendiente reproducir 500 y validar invitaciones/JWKS |
+| F03 | `config.jsonc` declara las seis Edge Functions; el cliente muestra el error HTTP real y `registrar-recinto` instrumenta sus validaciones. | `supabase/config.jsonc`, `supabase-territory-repository.ts`, `registrar-recinto/index.ts` | `npx supabase config validate` + TypeScript/ESLint + export Android | Corregido localmente; pendiente deploy, logs y cuenta autorizada |
+| F04 | S-04: el nuevo veedor hereda acceso por asignación vigente; `registered_by` se conserva. Cédula/teléfono en formulario, caso de uso y Edge Function; `roleId` validado. Los errores de carga conservan `message`, `code`, `details` y `hint` por consulta y se reportan a F11. | `gestionar-personal/index.ts`, `confirmar-resultados/index.ts`, `supabase-personnel-repository.ts`, `store.ts`, `personnel-management-screen.tsx`, migración propuesta | Pruebas de dominio S-04, config validate, 31 pruebas, TypeScript/ESLint | Instrumentado localmente; pendiente migración, deploy, IDs remotos, logs e invitaciones |
 | F05 | Regla S-01 confirmada y conservada: suma exacta de candidatos + blancos + nulos. | `validate-electoral-act-arithmetic.ts`, `registrar_acta_electoral.sql` | 12 pruebas de dominio de actas | Lógica verificada por pruebas; pendiente prueba en dispositivo |
-| F06 | Cada captura guarda `actId`; la pantalla filtra por acta y elimina `captures[0]`. | `evidence.ts`, `capture-evidence.ts`, `evidence-slice.ts`, `evidence-capture-screen.tsx` | Prueba de pertenencia por acta + TypeScript/ESLint | Corregido localmente; pendiente cámara/GPS reales y advertencia S-02 |
+| F06 | Cada captura guarda `actId`; la pantalla filtra por acta y elimina `captures[0]`. El formulario muestra el paso 5 «Evidencia fotográfica y GPS» y abre la cámara al guardar. | `evidence.ts`, `capture-evidence.ts`, `evidence-slice.ts`, `evidence-capture-screen.tsx`, `act-registration-screen.tsx`, `role-home.tsx`, `app-navigator.tsx` | Prueba de pertenencia por acta + TypeScript/ESLint | Corregido localmente; pendiente cámara/GPS reales y advertencia S-02 |
 | F07 | La propuesta ya no se envía al prepararla; exige confirmación humana explícita. El corrector puede ser el veedor asignado aunque no sea el autor (S-04). | `confirm-correction.ts`, `electoral-act.ts`, `act-correction-screen.tsx`, `confirmar-resultados/index.ts` | Pruebas del mapeador y de autorización + TypeScript/ESLint | Corregido localmente; aprobador formal pendiente de definición |
 | F08 | Resultado OCR cacheado en `local_state` para evitar llamadas repetidas a Gemini. | `act-ocr-slice.ts`, `sync-worker.ts` | Pruebas del worker + TypeScript/ESLint | Corregido localmente; OCR real pendiente de documento autorizado |
-| F09 | Worker de dos fases, idempotencia, backoff acotado, límite de intentos y propietario de la operación. Reintento manual reinicia contador. | `sync-worker.ts`, `offline-slice.ts`, `store.ts`, slices que encolan | 6 pruebas del worker | Corregido localmente; **S-03 sigue pendiente en backend** |
-| F10 | Agregados solo con actas `aprobada`; `pendingActs` separado; filtro provincial fail-closed. | `act-approval.ts`, `territory-access.ts`, `supabase-dashboard-repository.ts` | 3 pruebas de dominio + TypeScript/ESLint | Corregido localmente; pendiente validación con datos autorizados |
+| F09 | Worker de dos fases, idempotencia, backoff acotado, límite de intentos y propietario de la operación. Reintento manual reinicia contador. La evidencia con ID de acta local negativo se encola y se mapea al ID remoto. | `sync-worker.ts`, `offline-slice.ts`, `capture-evidence.ts`, `evidence-slice.ts`, `store.ts`, slices que encolan | 6 pruebas del worker + TypeScript/ESLint | Corregido localmente; **S-03 sigue pendiente en backend** |
+| F10 | Agregados solo con actas `aprobada`; `pendingActs` separado; filtro provincial fail-closed; dashboard retirado al veedor. | `act-approval.ts`, `territory-access.ts`, `supabase-dashboard-repository.ts`, `app-navigator.tsx` | 3 pruebas de dominio + TypeScript/ESLint | Corregido localmente; pendiente validación con datos autorizados |
 | F11 | `flush()` envía informes pendientes de Crashlytics al recuperar red; registros SQLite se marcan entregados. Sin segundo handler global. | `error-reporter.ts`, `sqlite-error-reporter.ts`, `firebase-crashlytics-error-reporter.ts`, `app-navigator.tsx` | TypeScript/ESLint + export Android | Corregido localmente; pendiente evento real en build release |
 
 ### 7.2 Verificación ejecutada en esta ronda
 
 - `node --test src/**/*.test.mjs`: **31/31 pruebas pasaron** (18 preexistentes + 13 nuevas).
-- `npx tsc --noEmit -p tsconfig.check.json` (configuración temporal que incluye solo `src/`): pasó sin errores.
+- `npx tsc --noEmit -p tsconfig.check.json` (configuración de verificación de la app, limitada a `src/` porque las Edge Functions usan imports de Deno): pasó sin errores.
 - `npx expo lint`: pasó sin errores. Se corrigió el error preexistente de `src/hooks/use-color-scheme.web.ts` usando `useSyncExternalStore` en lugar de `setState` dentro de un efecto.
 - `npx expo-doctor`: 20/20 comprobaciones.
 - `npx expo export --platform android`: bundle generado correctamente.
@@ -372,7 +414,9 @@ Esta sección registra la ronda de correcciones posteriores a la auditoría. Nin
 3. **S-02 advertencia GPS (bloquea F06):** se propone almacenar `latitude`/`longitude` en `polling_places` y comparar la captura con el recinto asignado, mostrando advertencia sin bloquear. No existe coordenada verificada en el esquema; **no se implementó**.
 4. **ADR-05 WebView y mapas (bloquea F06/F10):** `react-native-webview` no está instalado y no hay provider de mapas definido. Requiere aprobación para instalar la dependencia y documentar el proveedor; **no se implementó**.
 5. **F02 offline:** hace falta una decisión sobre qué catálogos territoriales se cachean en SQLite y por cuánto tiempo; **no se implementó**.
-6. **F03/F04 HTTP 500:** hacen falta logs de la Edge Function, el cuerpo/headers reales de la respuesta y una cuenta autorizada para comprobar JWKS, `is_active_user()`, `get_my_role()` y el uso de `SUPABASE_SERVICE_ROLE_KEY` frente a secretos nuevos. La declaración de funciones en `config.jsonc` está corregida, pero **no se desplegó**.
+6. **F03/F04 HTTP 500:** el cliente y las dos Edge Functions ya instrumentan el HTTP status y los campos `error`, `message`, `detail` y `code`. Siguen haciendo falta logs de la Edge Function y una cuenta autorizada para comprobar JWKS, `is_active_user()`, `get_my_role()` y el uso de `SUPABASE_SERVICE_ROLE_KEY`. La versión instrumentada **no se desplegó**.
+7. **Cédula y teléfono (RF-02):** la migración `20261125130000_personnel_contact_fields.sql` agrega `id_card` y `phone` a `public.profiles`, sin modificar RLS ni datos. Requiere aprobación para aplicarse; hasta entonces, el código con estos campos no debe desplegarse.
+8. **Identificadores de roles (F04):** `ALLOWED_ROLE_IDS` asume `coordinador_recinto = 2` y `veedor = 3`, coherente con el cliente. Debe confirmarse contra la tabla `roles` remota antes de cerrar el diagnóstico del mensaje «No se pudo validar el rol solicitado».
 
 ### 7.4 Pruebas manuales pendientes en dispositivo
 
@@ -385,5 +429,67 @@ Esta sección registra la ronda de correcciones posteriores a la auditoría. Nin
 7. F10: validar que un acta `pendiente_revision` no altere resultados y que un provincial no vea mesas de otra provincia.
 8. F11: instalar build release, generar error y confirmar recepción en Firebase Crashlytics Console.
 
+### 7.5 Ronda de corrección de perfiles y errores operativos (25 nov 2026)
+
+Alcance aprobado por el usuario: instrumentar y preparar el deploy de las Edge Functions, guardar cédula y teléfono en columnas de `profiles` mediante migración propuesta, hacer que el veedor entre a la cámara desde el registro de acta y quitarle el dashboard. Quedaron expresamente fuera: Realtime del Exit Poll y los cuatro estados del historial offline.
+
+#### 7.5.1 Diagnóstico y corrección local
+
+| Síntoma reportado | Causa encontrada en código | Corrección aplicada localmente |
+|---|---|---|
+| «No se pudo registrar el recinto. Verifica tu conexión y tus permisos» | No era un mensaje del backend: era el fallback genérico de `supabase-territory-repository.ts:101` cuando no había una `Response` legible. | El repositorio ahora muestra HTTP status, `name`, `message` y los campos `error`, `message`, `detail`, `code` o el texto del cuerpo. `registrar-recinto` registra y devuelve el detalle de `is_active_user`, `get_my_role`, `profiles`, `parishes` y `cantons`. |
+| «No se pudo validar la jurisdicción del reciento» | `gestionar-personal/index.ts` descartaba el error real de `getPollingPlaceProvince()` y respondía un 500 genérico al fallar `polling_places → parishes → cantons`. | Cada consulta conserva `error.message`, se registra en logs y se devuelve en `detail`. |
+| «No se pudo validar el rol solicitado» | `getRoleId()` buscaba solo por `roles.code`; el cliente usa IDs fijos. Si el catálogo remoto no coincide, la validación falla. | El cliente envía `roleId`/`watcherRoleId`; la función valida contra `ALLOWED_ROLE_IDS`, consulta por `code` y usa fallback por `id`. Pendiente confirmar los IDs remotos. |
+| El veedor no ve opción de tomar fotografías | La tarjeta dependía de `onOpenEvidence`, que `ObserverHomeScreen` no pasaba; además, `EvidenceCapture` exige `actId`. | Se reemplazó por una sola tarjeta «Registrar acta y capturar evidencia», que abre `ActRegistration`; la foto se toma después de guardar el acta y queda asociada a su `actId`. |
+
+#### 7.5.2 Cobertura por rol después de la ronda
+
+| Rol | Acciones confirmadas en la navegación/código | Límites confirmados en la navegación |
+|---|---|---|
+| Coordinador provincial | Consultar Territorio, crear recinto, gestionar coordinadores de recinto con cédula/teléfono, consultar dashboard. | No se registra `PersonnelManagement` para crear veedores en otros contextos; no hay rutas de asignación, actas ni corrección. El dashboard sigue filtrado por provincia en el repositorio. |
+| Coordinador de recinto | Consultar su recinto y mesas, gestionar veedores con cédula/teléfono, asignar/reasignar, corregir actas y consultar dashboard filtrado por recinto. | No hay rutas de Territorio ni de creación de coordinadores; el dashboard no muestra el consolidado provincial. |
+| Veedor | Registrar acta, capturar foto con GPS, OCR con revisión humana, aritmética, guardado offline, historial y corrección propia. | `Dashboard` ya no se registra para este rol; tampoco hay rutas de cuentas, recintos, asignaciones ni actas ajenas. |
+
+La cobertura anterior describe el cableo de React Navigation y el flujo de cliente. **No sustituye la prueba con cuentas reales ni la verificación de RLS remota.**
+
+#### 7.5.3 Verificación ejecutada
+
+- `node --test src/**/*.test.mjs`: **31/31 pruebas pasaron**.
+- `npx tsc --noEmit -p tsconfig.check.json`: pasó sin errores.
+- `npx expo lint`: 0 errores y 0 advertencias.
+- `npx expo-doctor`: 20/20 comprobaciones.
+- `npx expo export --platform android --output-dir C:/Users/Emily/AppData/Local/Temp/opencode/ce-export-perfiles`: bundle Android generado.
+- `npx supabase config validate`: configuración válida, 0 errores y 0 advertencias.
+
+#### 7.5.4 Estado y límites
+
+Estado: **corregido localmente; pendiente remoto y dispositivo**. No se desplegaron `registrar-recinto` ni `gestionar-personal`, no se aplicó la migración de contacto, no se obtuvieron logs de Supabase, no se generó APK y no se ejecutaron pruebas en Android. La verificación remota con clave anónima devuelve `401`, por lo que RLS, columnas y relaciones siguen sin comprobarse con una sesión autorizada. Tampoco se verificó el valor real de `roles.id`/`roles.code`; `ALLOWED_ROLE_IDS` es una suposición documentada que debe confirmarse.
+
 **No se ejecutaron** EAS Build, despliegue de Edge Functions, migraciones SQL, commits, push ni generación de APK. Tampoco se afirmó pruebas remotas o en dispositivo que no se realizaron.
+
+### 7.6 Ronda del HTTP 400 al crear cuentas (26 nov 2026)
+
+Alcance aprobado: **preparar sin desplegar**. No se modificaron datos remotos ni RLS, no se desplegaron Edge Functions y no se ejecutaron builds.
+
+#### 7.6.1 Causa exacta
+
+- El cliente (`supabase-personnel-repository.ts`) envía siempre `action`, `role`, `roleId`, `idCard`, `phone`, `email` y `pollingPlaceId`.
+- La versión confirmada en `HEAD` de `gestionar-personal` solo permite `action`, `role`, `fullName`, `email` y `pollingPlaceId` en `allowedFields`. `parseRequestBody()` ejecuta `Object.keys(value).some(key => !allowedFields.has(key))`, devuelve `null` y el handler responde `400 { error: "Revisa los datos enviados." }` antes de cualquier consulta a la base de datos.
+- Los campos que disparan el rechazo son `roleId`, `idCard` y `phone`. Tener las columnas `profiles.id_card` y `profiles.phone` no cambia este contrato: el fallo es de parseo, no de esquema. El usuario informó que agregó y verificó dichas columnas; el asistente no aplicó la migración ni verificó el esquema remoto con una sesión autorizada.
+- El cliente no oculta el detalle: `readFunctionError()` conserva `error`, `message`, `detail` y `code` del cuerpo HTTP. Era el servidor el que devolvía solo `error`, sin información del campo inválido.
+- La contraseña no interviene: la cuenta se crea con `auth.admin.inviteUserByEmail()` y el usuario la define desde `controlelectoral://reset-password`.
+
+#### 7.6.2 Corrección preparada (sin desplegar)
+
+- `parseRequestBody()` devuelve `ParseResult` (`{ body }` o `{ error, detail? }`) y `isParseFailure()`; el HTTP 400 ahora incluye `detail` con los campos no esperados y cada validación incumplida.
+- `memberSchema` limita `fullName` a 160 caracteres y `email` a 254, alineándose con la Edge Function para evitar un 400 equivalente después del deploy.
+
+#### 7.6.3 Verificación y pendiente
+
+- `node --test src/**/*.test.mjs`: 31/31 pruebas pasaron.
+- `npx tsc -p tsconfig.check.json --noEmit`: sin errores.
+- `npx expo lint`: sin errores ni advertencias.
+- `git diff --check`: sin errores de whitespace.
+
+La corrección definitiva sigue pendiente de autorización para desplegar la versión local de `gestionar-personal`; sin ese deploy, el HTTP 400 remoto persistirá. Tampoco se dispone de logs de Edge Functions ni de una sesión autorizada para confirmar `roles.id`/`roles.code`, por lo que `ALLOWED_ROLE_IDS` continúa siendo una suposición documentada.
 

@@ -1,0 +1,7 @@
+// Verificación estática de la aplicación móvil. Las Edge Functions usan
+// imports de Deno y se validan por separado; por eso no se incluyen aquí.
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["src/**/*.test.mjs"]
+}

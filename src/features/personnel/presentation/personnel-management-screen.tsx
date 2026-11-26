@@ -1,8 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback  } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Pressable, Text, View } from 'react-native';
 import { z } from 'zod';
+import { useFocusEffect } from '@react-navigation/native';
+
 
 import { userRoles } from '@/features/auth/domain/user-profile';
 import {
@@ -22,11 +24,52 @@ import {
 } from '@/features/personnel/presentation/personnel-slice';
 import { useAppDispatch, useAppSelector } from '@/store/store';
 
-const memberSchema = z.object({
-  fullName: z.string().trim().min(1, 'Ingresa los nombres y apellidos.'),
-  email: z.string().trim().email('Ingresa un correo electrónico válido.'),
-  pollingPlaceId: z.number().int().positive().nullable(),
-});
+const memberSchema = z
+  .object({
+    role: z.enum([userRoles.precinctCoordinator, userRoles.observer]),
+    fullName: z.string().trim().min(1, 'Ingresa los nombres y apellidos.').max(160, 'Los nombres y apellidos son demasiado largos.'),
+    idCard: z.string().trim().regex(/^\d{10}$/, 'La cédula debe tener 10 dígitos numéricos.'),
+    phone: z.string().trim().regex(/^\d{10}$/, 'El teléfono debe tener 10 dígitos numéricos.'),
+    email: z
+      .string()
+      .trim()
+      .email('Ingresa un correo electrónico válido.')
+      .max(254, 'El correo electrónico es demasiado largo.')
+      .regex(/@gmail\.com$/i, 'El correo debe terminar en @gmail.com.'),
+    pollingPlaceId: z.number().int().positive().nullable(),
+    electoralTableIds: z.array(z.number().int().positive()),
+  })
+  .superRefine((values, context) => {
+    if (values.role === userRoles.precinctCoordinator) {
+      if (values.pollingPlaceId === null) {
+        context.addIssue({
+          code: 'custom',
+          path: ['pollingPlaceId'],
+          message: 'Selecciona un recinto.',
+        });
+      }
+      if (values.electoralTableIds.length > 0) {
+        context.addIssue({
+          code: 'custom',
+          path: ['electoralTableIds'],
+          message: 'Solo los veedores pueden tener mesas asignadas.',
+        });
+      }
+    } else if (values.electoralTableIds.length === 0) {
+      context.addIssue({
+        code: 'custom',
+        path: ['electoralTableIds'],
+        message: 'Selecciona al menos una mesa para el veedor.',
+      });
+    }
+    if (new Set(values.electoralTableIds).size !== values.electoralTableIds.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['electoralTableIds'],
+        message: 'No selecciones la misma mesa dos veces.',
+      });
+    }
+  });
 
 const assignmentSchema = z
   .object({
@@ -61,20 +104,23 @@ function OptionRow({
   label,
   selected,
   onPress,
+  disabled = false,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
       className={`min-h-12 justify-center rounded-xl border px-4 py-3 ${
         selected
           ? 'border-electoral-cyan bg-electoral-cyan-light'
           : 'border-electoral-border bg-white'
-      }`}
+      } ${disabled ? 'opacity-50' : ''}`}
+      disabled={disabled}
       onPress={onPress}>
       <Text className="text-sm font-medium text-electoral-navy">{label}</Text>
     </Pressable>
@@ -96,6 +142,9 @@ function MemberRow({
     <View className="gap-1 rounded-xl border border-electoral-border bg-white p-4">
       <Text className="text-base font-semibold text-electoral-navy">{member.fullName}</Text>
       <Text className="text-sm text-electoral-muted">
+        Cédula {member.idCard || 'sin registrar'} · Teléfono {member.phone || 'sin registrar'}
+      </Text>
+      <Text className="text-sm text-electoral-muted">
         {member.isActive ? 'Cuenta activa' : 'Cuenta inactiva'}
         {locationName ? ` · ${locationName}` : ''}
       </Text>
@@ -114,7 +163,15 @@ export function PersonnelManagementScreen() {
 
   const memberForm = useForm<MemberFormValues>({
     resolver: zodResolver(memberSchema),
-    defaultValues: { fullName: '', email: '', pollingPlaceId: null },
+    defaultValues: {
+      role: userRoles.observer,
+      fullName: '',
+      idCard: '',
+      phone: '',
+      email: '',
+      pollingPlaceId: null,
+      electoralTableIds: [],
+    },
   });
   const assignmentForm = useForm<AssignmentFormValues>({
     resolver: zodResolver(assignmentSchema),
@@ -129,6 +186,10 @@ export function PersonnelManagementScreen() {
     control: memberForm.control,
     name: 'pollingPlaceId',
   });
+  const selectedMemberTableIds = useWatch({
+    control: memberForm.control,
+    name: 'electoralTableIds',
+  });
   const selectedWatcherId = useWatch({
     control: assignmentForm.control,
     name: 'watcherId',
@@ -142,11 +203,23 @@ export function PersonnelManagementScreen() {
     name: 'electoralTableIds',
   });
 
+  const setMemberValue = memberForm.setValue;
   useEffect(() => {
     if (profile && (isProvincial || isPrecinct)) {
+      setMemberValue(
+        'role',
+        isProvincial ? userRoles.precinctCoordinator : userRoles.observer,
+      );
       void dispatch(loadPersonnel(profile));
     }
-  }, [dispatch, isPrecinct, isProvincial, profile]);
+  }, [dispatch, isPrecinct, isProvincial, profile, setMemberValue]);
+
+  useFocusEffect(
+    useCallback(() => {
+      dispatch(clearPersonnelAction());
+      setSuccess(null);
+    }, [dispatch]),
+  );
 
   const placeNames = useMemo(
     () => new Map((overview?.pollingPlaces ?? []).map((place) => [place.id, place.name])),
@@ -158,6 +231,17 @@ export function PersonnelManagementScreen() {
   const allWatchers = (overview?.members ?? []).filter(
     (member) => member.role === userRoles.observer,
   );
+  const assignedTableLabels = useMemo(() => {
+    const labels = new Map<number, string>();
+    for (const assignment of overview?.assignments ?? []) {
+      if (assignment.endedAt !== null) continue;
+      const watcher = (overview?.members ?? []).find(
+        (member) => member.id === assignment.watcherId,
+      );
+      labels.set(assignment.electoralTableId, watcher?.fullName ?? 'otro veedor');
+    }
+    return labels;
+  }, [overview?.assignments, overview?.members]);
   const replacingWatcherId = selectedReplacingWatcherId;
 
   if (!profile || (!isProvincial && !isPrecinct)) {
@@ -176,13 +260,28 @@ export function PersonnelManagementScreen() {
         createMember({
           role: isProvincial ? userRoles.precinctCoordinator : userRoles.observer,
           fullName: values.fullName,
+          idCard: values.idCard,
+          phone: values.phone,
           email: values.email,
           ...(isProvincial ? { pollingPlaceId: values.pollingPlaceId ?? undefined } : {}),
+          ...(isPrecinct ? { electoralTableIds: values.electoralTableIds } : {}),
         }),
       ).unwrap();
       await reload();
-      memberForm.reset({ fullName: '', email: '', pollingPlaceId: null });
-      setSuccess('Se envió la invitación al correo indicado.');
+      memberForm.reset({
+        role: isProvincial ? userRoles.precinctCoordinator : userRoles.observer,
+        fullName: '',
+        idCard: '',
+        phone: '',
+        email: '',
+        pollingPlaceId: null,
+        electoralTableIds: [],
+      });
+      setSuccess(
+        isPrecinct
+          ? 'Se envió la invitación y se asignaron las mesas seleccionadas.'
+          : 'Se envió la invitación al correo indicado.',
+      );
     } catch {
       setSuccess(null);
     }
@@ -244,7 +343,7 @@ export function PersonnelManagementScreen() {
         <>
           <View className="gap-4 rounded-2xl border border-electoral-border bg-white p-5">
             <SectionTitle>
-              {isProvincial ? 'Invitar coordinador de recinto' : 'Invitar veedor'}
+              {isProvincial ? 'Crear coordinador de recinto' : 'Crear veedor'}
             </SectionTitle>
             <Controller
               control={memberForm.control}
@@ -253,6 +352,37 @@ export function PersonnelManagementScreen() {
                 <AuthField
                   label="Nombres y apellidos"
                   autoCapitalize="words"
+                  value={field.value}
+                  onChangeText={field.onChange}
+                  onBlur={field.onBlur}
+                  error={fieldState.error?.message}
+                />
+              )}
+            />
+            <Controller
+              control={memberForm.control}
+              name="idCard"
+              render={({ field, fieldState }) => (
+                <AuthField
+                  label="Cédula de identidad"
+                  autoCapitalize="none"
+                  keyboardType="phone-pad"
+                  value={field.value}
+                  onChangeText={field.onChange}
+                  onBlur={field.onBlur}
+                  error={fieldState.error?.message}
+                />
+              )}
+            />
+            <Controller
+              control={memberForm.control}
+              name="phone"
+              render={({ field, fieldState }) => (
+                <AuthField
+                  label="Teléfono"
+                  autoCapitalize="none"
+                  keyboardType="phone-pad"
+                  textContentType="telephoneNumber"
                   value={field.value}
                   onChangeText={field.onChange}
                   onBlur={field.onBlur}
@@ -302,11 +432,58 @@ export function PersonnelManagementScreen() {
                 ) : null}
               </View>
             ) : null}
+            {isPrecinct ? (
+              <View className="gap-2">
+                <Text className="text-sm font-semibold text-electoral-navy">
+                  Mesas a asignar
+                </Text>
+                <Text className="text-sm leading-5 text-electoral-muted">
+                  Selecciona una o varias mesas de tu recinto. Las que ya tienen
+                  un veedor activo no están disponibles.
+                </Text>
+                {overview.electoralTables.length === 0 ? (
+                  <AuthNotice message="Este recinto aún no tiene mesas registradas." />
+                ) : (
+                  overview.electoralTables.map((table) => {
+                    const assignedTo = assignedTableLabels.get(table.id);
+                    const disabled = assignedTo !== undefined;
+                    const selected = selectedMemberTableIds.includes(table.id);
+                    return (
+                      <OptionRow
+                        key={table.id}
+                        label={
+                          disabled
+                            ? `Mesa ${table.tableNumber} · Asignada a ${assignedTo}`
+                            : `Mesa ${table.tableNumber}`
+                        }
+                        selected={selected}
+                        disabled={disabled}
+                        onPress={() => {
+                          const current = memberForm.getValues('electoralTableIds');
+                          setMemberValue(
+                            'electoralTableIds',
+                            selected
+                              ? current.filter((id) => id !== table.id)
+                              : [...current, table.id],
+                            { shouldValidate: true },
+                          );
+                        }}
+                      />
+                    );
+                  })
+                )}
+                {memberForm.formState.errors.electoralTableIds?.message ? (
+                  <Text className="text-sm text-electoral-red">
+                    {memberForm.formState.errors.electoralTableIds.message}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
             <AuthNotice
               message={
                 isProvincial
                   ? 'Cada recinto puede tener un coordinador activo. La invitación se enviará por correo.'
-                  : 'La invitación se enviará por correo. Los datos de cédula y teléfono no se recopilan porque el esquema actual no ofrece campos autorizados para guardarlos.'
+                  : 'La invitación se enviará por correo y las mesas elegidas quedarán asignadas al veedor.'
               }
               success
             />
@@ -314,8 +491,9 @@ export function PersonnelManagementScreen() {
               label="Enviar invitación"
               loading={actionStatus === 'loading'}
               disabled={
-                isProvincial &&
-                (overview.pollingPlaces.length === 0 || selectedPollingPlaceId === null)
+                (isProvincial &&
+                  (overview.pollingPlaces.length === 0 || selectedPollingPlaceId === null)) ||
+                (isPrecinct && overview.electoralTables.length === 0)
               }
               onPress={() => void memberForm.handleSubmit(submitMember)()}
             />

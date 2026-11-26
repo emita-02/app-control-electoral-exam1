@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -141,23 +141,64 @@ export function AuthField({
   label,
   error,
   className,
+  secureTextEntry,
   ...props
 }: TextInputProps & { label: string; error?: string; className?: string }) {
+  const [passwordVisible, setPasswordVisible] = useState(false);
+
+  const isPasswordField = Boolean(secureTextEntry);
+
+  const inputClassName = `min-h-14 rounded-2xl border-2 bg-white text-base font-medium text-electoral-text ${
+    error
+      ? "border-electoral-red bg-red-50/30"
+      : "border-electoral-border"
+  } ${className ?? ""}`;
+
   return (
     <View className="gap-1.5">
       <Text className="text-xs font-bold uppercase tracking-wide text-electoral-navy">
         {label}
       </Text>
-      <TextInput
-        accessibilityLabel={label}
-        className={`min-h-14 rounded-2xl border-2 bg-white px-4 text-base font-medium text-electoral-text ${
-          error
-            ? "border-electoral-red bg-red-50/30"
-            : "border-electoral-border"
-        } ${className ?? ""}`}
-        placeholderTextColor="#667085"
-        {...props}
-      />
+
+      {isPasswordField ? (
+        <View
+          className={`min-h-14 flex-row items-center rounded-2xl border-2 bg-white ${
+            error
+              ? "border-electoral-red bg-red-50/30"
+              : "border-electoral-border"
+          }`}
+        >
+          <TextInput
+            accessibilityLabel={label}
+            className={`min-h-14 flex-1 px-4 text-base font-medium text-electoral-text ${className ?? ""}`}
+            placeholderTextColor="#667085"
+            secureTextEntry={!passwordVisible}
+            {...props}
+          />
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              passwordVisible ? "Ocultar contraseña" : "Mostrar contraseña"
+            }
+            accessibilityState={{ selected: passwordVisible }}
+            className="min-h-14 min-w-12 items-center justify-center px-3 active:opacity-60"
+            onPress={() => setPasswordVisible((visible) => !visible)}
+          >
+            <Text className="text-xl">
+              {passwordVisible ? "🙈" : "👁️"}
+            </Text>
+          </Pressable>
+        </View>
+      ) : (
+        <TextInput
+          accessibilityLabel={label}
+          className={`${inputClassName} px-4`}
+          placeholderTextColor="#667085"
+          {...props}
+        />
+      )}
+
       {error ? (
         <Text className="text-xs font-semibold text-electoral-red">
           ⚠ {error}

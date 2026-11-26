@@ -59,7 +59,6 @@ export function RoleHome({
   role,
   onOpenTerritory,
   onOpenPersonnel,
-  onOpenEvidence,
   onOpenActRegistration,
   onOpenDashboard,
   onOpenOfflineHistory,
@@ -67,7 +66,6 @@ export function RoleHome({
   role: UserRole;
   onOpenTerritory?: () => void;
   onOpenPersonnel?: () => void;
-  onOpenEvidence?: () => void;
   onOpenActRegistration?: () => void;
   onOpenDashboard?: () => void;
   onOpenOfflineHistory?: () => void;
@@ -150,20 +148,10 @@ export function RoleHome({
         {role === userRoles.observer && onOpenActRegistration ? (
           <ActionCard
             tag="Escrutinio"
-            title="Registrar acta electoral"
-            description="Ingresa votos de Alcaldía o Prefectura con validación aritmética inmediata."
+            title="Registrar acta y capturar evidencia"
+            description="Ingresa votos de Alcaldía o Prefectura y toma la foto nítida con GPS para guardar el acta."
             accent="cyan"
             onPress={onOpenActRegistration}
-          />
-        ) : null}
-
-        {role === userRoles.observer && onOpenEvidence ? (
-          <ActionCard
-            tag="Respaldo"
-            title="Capturar evidencia fotográfica"
-            description="Toma fotografía nítida del acta con coordenadas GPS verificadas."
-            accent="navy"
-            onPress={onOpenEvidence}
           />
         ) : null}
 

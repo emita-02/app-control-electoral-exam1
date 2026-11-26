@@ -13,13 +13,19 @@ const emailPattern =
 type CreateMemberBody = {
   action: "create_member";
   role: "coordinador_recinto" | "veedor";
+  roleId: number;
   fullName: string;
+  idCard: string;
+  phone: string;
   email: string;
   pollingPlaceId: number | null;
+  /** Mesas elegidas al crear un veedor; vacío al crear un coordinador de recinto. */
+  electoralTableIds: number[];
 };
 
 type SaveAssignmentsBody = {
   action: "save_assignments";
+  watcherRoleId: number;
   watcherId: string;
   electoralTableIds: number[];
   replacingWatcherId: string | null;
@@ -36,6 +42,7 @@ type ProfileScope = {
 type ProvinceLookup = {
   provinceId: number | null;
   failed: boolean;
+  detail?: string;
 };
 type AssignmentRow = {
   id: number;
@@ -78,55 +85,166 @@ function readProfileScope(value: unknown): ProfileScope | null {
   };
 }
 
-function parseRequestBody(value: unknown): RequestBody | null {
+type ParseFailure = { error: string; detail?: string };
+type ParseResult = { body: RequestBody } | ParseFailure;
+
+function isParseFailure(result: ParseResult): result is ParseFailure {
+  return "error" in result;
+}
+
+function parseRequestBody(value: unknown): ParseResult {
   if (!isRecord(value) || typeof value.action !== "string") {
-    return null;
+    return { error: "Revisa los datos enviados." };
   }
 
   if (value.action === "create_member") {
     const allowedFields = new Set([
       "action",
       "role",
+      "roleId",
       "fullName",
+      "idCard",
+      "phone",
       "email",
       "pollingPlaceId",
+      "electoralTableIds",
     ]);
+    const unexpectedFields = Object.keys(value).filter(
+      (key) => !allowedFields.has(key),
+    );
+    const tableIdsValue = value.electoralTableIds;
+    const tableIds = Array.isArray(tableIdsValue) ? tableIdsValue : [];
     if (
-      Object.keys(value).some((key) => !allowedFields.has(key)) ||
+      unexpectedFields.length > 0 ||
       (value.role !== "coordinador_recinto" && value.role !== "veedor") ||
+      (typeof value.roleId !== "number" ||
+        !Number.isSafeInteger(value.roleId) ||
+        value.roleId <= 0) ||
       typeof value.fullName !== "string" ||
       !value.fullName.trim() ||
       value.fullName.trim().length > 160 ||
+      typeof value.idCard !== "string" ||
+      !value.idCard.trim() ||
+      value.idCard.trim().length > 32 ||
+      typeof value.phone !== "string" ||
+      !value.phone.trim() ||
+      value.phone.trim().length > 32 ||
       typeof value.email !== "string" ||
       !emailPattern.test(value.email.trim()) ||
       value.email.trim().length > 254 ||
       (value.pollingPlaceId !== null &&
         (typeof value.pollingPlaceId !== "number" ||
           !Number.isSafeInteger(value.pollingPlaceId) ||
-          value.pollingPlaceId <= 0))
+          value.pollingPlaceId <= 0)) ||
+      !Array.isArray(tableIdsValue) ||
+      tableIds.some(
+        (id) => typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0,
+      ) ||
+      new Set(tableIds).size !== tableIds.length ||
+      (value.role === "veedor" && tableIds.length === 0) ||
+      (value.role === "coordinador_recinto" && tableIds.length > 0)
     ) {
-      return null;
+      const detail: string[] = [];
+      if (unexpectedFields.length > 0) {
+        detail.push(`campos no esperados: ${unexpectedFields.join(", ")}`);
+      }
+      if (value.role !== "coordinador_recinto" && value.role !== "veedor") {
+        detail.push("role debe ser coordinador_recinto o veedor");
+      }
+      if (
+        typeof value.roleId !== "number" ||
+        !Number.isSafeInteger(value.roleId) ||
+        value.roleId <= 0
+      ) {
+        detail.push("roleId debe ser un entero positivo");
+      }
+      if (
+        typeof value.fullName !== "string" ||
+        !value.fullName.trim() ||
+        value.fullName.trim().length > 160
+      ) {
+        detail.push("fullName es obligatorio y no supera los 160 caracteres");
+      }
+      if (
+        typeof value.idCard !== "string" ||
+        !value.idCard.trim() ||
+        value.idCard.trim().length > 32
+      ) {
+        detail.push("idCard es obligatorio y no supera los 32 caracteres");
+      }
+      if (
+        typeof value.phone !== "string" ||
+        !value.phone.trim() ||
+        value.phone.trim().length > 32
+      ) {
+        detail.push("phone es obligatorio y no supera los 32 caracteres");
+      }
+      if (
+        typeof value.email !== "string" ||
+        !emailPattern.test(value.email.trim()) ||
+        value.email.trim().length > 254
+      ) {
+        detail.push("email no es válido o supera los 254 caracteres");
+      }
+      if (
+        value.pollingPlaceId !== null &&
+        (typeof value.pollingPlaceId !== "number" ||
+          !Number.isSafeInteger(value.pollingPlaceId) ||
+          value.pollingPlaceId <= 0)
+      ) {
+        detail.push("pollingPlaceId debe ser null o un entero positivo");
+      }
+      if (
+        !Array.isArray(tableIdsValue) ||
+        tableIds.some(
+          (id) => typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0,
+        ) ||
+        new Set(tableIds).size !== tableIds.length ||
+        (value.role === "veedor" && tableIds.length === 0) ||
+        (value.role === "coordinador_recinto" && tableIds.length > 0)
+      ) {
+        detail.push(
+          "electoralTableIds debe ser una lista de ids positivos sin repetir; obligatoria para veedor y vacía para coordinador de recinto",
+        );
+      }
+      return {
+        error: "Revisa los datos enviados.",
+        detail: detail.join("; "),
+      };
     }
 
     return {
-      action: "create_member",
-      role: value.role,
-      fullName: value.fullName.trim(),
-      email: value.email.trim().toLowerCase(),
-      pollingPlaceId: value.pollingPlaceId,
+      body: {
+        action: "create_member",
+        role: value.role,
+        roleId: value.roleId,
+        fullName: value.fullName.trim(),
+        idCard: value.idCard.trim(),
+        phone: value.phone.trim(),
+        email: value.email.trim().toLowerCase(),
+        pollingPlaceId: value.pollingPlaceId,
+        electoralTableIds: tableIds,
+      },
     };
   }
 
   if (value.action === "save_assignments") {
     const allowedFields = new Set([
       "action",
+      "watcherRoleId",
       "watcherId",
       "electoralTableIds",
       "replacingWatcherId",
       "endReason",
     ]);
+    const unexpectedFields = Object.keys(value).filter(
+      (key) => !allowedFields.has(key),
+    );
     if (
-      Object.keys(value).some((key) => !allowedFields.has(key)) ||
+      unexpectedFields.length > 0 ||
+      (typeof value.watcherRoleId !== "number" ||
+        !Number.isSafeInteger(value.watcherRoleId) ||
+        value.watcherRoleId <= 0) ||
       typeof value.watcherId !== "string" ||
       !value.watcherId.trim() ||
       !Array.isArray(value.electoralTableIds) ||
@@ -140,41 +258,64 @@ function parseRequestBody(value: unknown): RequestBody | null {
       (value.endReason !== null &&
         (typeof value.endReason !== "string" || value.endReason.trim().length > 500))
     ) {
-      return null;
+      return {
+        error: "Revisa los datos enviados.",
+        detail:
+          unexpectedFields.length > 0
+            ? `campos no esperados: ${unexpectedFields.join(", ")}`
+            : "watcherRoleId, watcherId, electoralTableIds, replacingWatcherId o endReason no son válidos",
+      };
     }
 
     const tableIds = [...new Set(value.electoralTableIds)];
     if (tableIds.length !== value.electoralTableIds.length) {
-      return null;
+      return {
+        error: "Revisa los datos enviados.",
+        detail: "electoralTableIds contiene mesas repetidas",
+      };
     }
 
     return {
-      action: "save_assignments",
-      watcherId: value.watcherId.trim(),
-      electoralTableIds: tableIds,
-      replacingWatcherId: value.replacingWatcherId,
-      endReason: value.endReason?.trim() || null,
+      body: {
+        action: "save_assignments",
+        watcherRoleId: value.watcherRoleId,
+        watcherId: value.watcherId.trim(),
+        electoralTableIds: tableIds,
+        replacingWatcherId: value.replacingWatcherId,
+        endReason: value.endReason?.trim() || null,
+      },
     };
   }
 
-  return null;
+  return {
+    error: "Revisa los datos enviados.",
+    detail: "action no reconocido",
+  };
 }
 
-async function getRoleId(
-  serviceSupabase: ReturnType<typeof createClient>,
-  roleCode: string,
-): Promise<number | null> {
-  const { data, error } = await serviceSupabase
-    .from("roles")
-    .select("id")
-    .eq("code", roleCode)
-    .maybeSingle();
+// Estos son los mismos identificadores que la app ya usa para interpretar
+// `profiles.role_id`. Se validan en servidor para no aceptar un roleId arbitrario.
+const ALLOWED_ROLE_IDS: Record<"coordinador_recinto" | "veedor", number> = {
+  coordinador_recinto: 2,
+  veedor: 3,
+};
 
-  if (error || !data || typeof data.id !== "number") {
-    return null;
+  async function getRoleId(
+    _serviceSupabase: ReturnType<typeof createClient>,
+    roleCode: "coordinador_recinto" | "veedor",
+    providedRoleId?: number,
+  ): Promise<number | null> {
+    const expectedId = ALLOWED_ROLE_IDS[roleCode];
+    if (providedRoleId !== undefined && providedRoleId !== expectedId) {
+      console.error("gestionar-personal: roleId no coincide con el rol solicitado", {
+        roleCode,
+        providedRoleId,
+        expectedId,
+      });
+      return null;
+    }
+    return expectedId;
   }
-  return data.id;
-}
 
 async function getPollingPlaceProvince(
   serviceSupabase: ReturnType<typeof createClient>,
@@ -186,7 +327,12 @@ async function getPollingPlaceProvince(
     .eq("id", pollingPlaceId)
     .maybeSingle();
   if (pollingPlaceError) {
-    return { provinceId: null, failed: true };
+    console.error("gestionar-personal: falló polling_places.parish_id", pollingPlaceError);
+    return {
+      provinceId: null,
+      failed: true,
+      detail: pollingPlaceError.message ?? "error al consultar polling_places",
+    };
   }
   if (!pollingPlace) {
     return { provinceId: null, failed: false };
@@ -198,7 +344,12 @@ async function getPollingPlaceProvince(
     .eq("id", pollingPlace.parish_id)
     .maybeSingle();
   if (parishError) {
-    return { provinceId: null, failed: true };
+    console.error("gestionar-personal: falló parishes.canton_id", parishError);
+    return {
+      provinceId: null,
+      failed: true,
+      detail: parishError.message ?? "error al consultar parishes",
+    };
   }
   if (!parish) {
     return { provinceId: null, failed: false };
@@ -210,13 +361,60 @@ async function getPollingPlaceProvince(
     .eq("id", parish.canton_id)
     .maybeSingle();
   if (cantonError) {
-    return { provinceId: null, failed: true };
+    console.error("gestionar-personal: falló cantons.province_id", cantonError);
+    return {
+      provinceId: null,
+      failed: true,
+      detail: cantonError.message ?? "error al consultar cantons",
+    };
   }
   if (!canton || typeof canton.province_id !== "number") {
     return { provinceId: null, failed: false };
   }
 
   return { provinceId: canton.province_id, failed: false };
+}
+
+// Un veedor recién creado solo puede recibir mesas reales de su recinto y sin
+// asignación activa. Se comprueba antes de invitar y de nuevo justo antes de
+// escribir, para reducir la ventana entre Auth y PostgreSQL.
+async function validateTablesForNewWatcher(
+  serviceSupabase: ReturnType<typeof createClient>,
+  pollingPlaceId: number,
+  tableIds: number[],
+): Promise<{ error: string; status: number } | null> {
+  const { data: tables, error: tablesError } = await serviceSupabase
+    .from("electoral_tables")
+    .select("id")
+    .eq("polling_place_id", pollingPlaceId)
+    .in("id", tableIds);
+  if (tablesError) {
+    console.error("gestionar-personal: falló validación de mesas del veedor", tablesError);
+    return { error: "No se pudieron validar las mesas seleccionadas.", status: 500 };
+  }
+  if ((tables ?? []).length !== tableIds.length) {
+    return { error: "Una o más mesas no pertenecen a tu recinto.", status: 403 };
+  }
+
+  const { data: activeAssignments, error: assignmentsError } = await serviceSupabase
+    .from("watcher_assignments")
+    .select("id")
+    .is("ended_at", null)
+    .in("electoral_table_id", tableIds);
+  if (assignmentsError) {
+    console.error(
+      "gestionar-personal: falló consulta de asignaciones activas",
+      assignmentsError,
+    );
+    return { error: "No se pudieron comprobar las asignaciones actuales.", status: 500 };
+  }
+  if ((activeAssignments ?? []).length > 0) {
+    return {
+      error: "Una o más mesas ya están asignadas a otro veedor.",
+      status: 409,
+    };
+  }
+  return null;
 }
 
 async function createMember(
@@ -250,7 +448,13 @@ async function createMember(
       body.pollingPlaceId,
     );
     if (placeProvince.failed) {
-      return jsonResponse({ error: "No se pudo validar la jurisdicción del recinto." }, 500);
+      return jsonResponse(
+        {
+          error: "No se pudo validar la jurisdicción del recinto.",
+          detail: placeProvince.detail ?? "error de consulta territorial",
+        },
+        500,
+      );
     }
     if (placeProvince.provinceId === null) {
       return jsonResponse({ error: "No se encontró el recinto seleccionado." }, 404);
@@ -272,9 +476,20 @@ async function createMember(
     pollingPlaceId = callerProfile.polling_place_id;
   }
 
-  const roleId = await getRoleId(serviceSupabase, body.role);
+  const roleId = await getRoleId(serviceSupabase, body.role, body.roleId);
   if (roleId === null) {
     return jsonResponse({ error: "No se pudo validar el rol solicitado." }, 500);
+  }
+
+  if (body.role === "veedor") {
+    const tableProblem = await validateTablesForNewWatcher(
+      serviceSupabase,
+      pollingPlaceId,
+      body.electoralTableIds,
+    );
+    if (tableProblem) {
+      return jsonResponse({ error: tableProblem.error }, tableProblem.status);
+    }
   }
 
   if (body.role === "coordinador_recinto") {
@@ -314,6 +529,13 @@ async function createMember(
     });
 
   if (inviteError || !invitedUser.user) {
+    if (inviteError) {
+      console.error("gestionar-personal: falló inviteUserByEmail", {
+        message: inviteError.message,
+        code: inviteError.code,
+        status: inviteError.status,
+      });
+    }
     return jsonResponse(
       {
         error:
@@ -325,9 +547,34 @@ async function createMember(
     );
   }
 
+  if (body.role === "veedor") {
+    const tableProblem = await validateTablesForNewWatcher(
+      serviceSupabase,
+      pollingPlaceId,
+      body.electoralTableIds,
+    );
+    if (tableProblem) {
+      const { error: cleanupError } = await serviceSupabase.auth.admin.deleteUser(
+        invitedUser.user.id,
+      );
+      if (cleanupError) {
+        return jsonResponse(
+          {
+            error:
+              "Las mesas ya no están disponibles y no se pudo limpiar la cuenta invitada. Contacta al administrador.",
+          },
+          500,
+        );
+      }
+      return jsonResponse({ error: tableProblem.error }, tableProblem.status);
+    }
+  }
+
   const { error: profileError } = await serviceSupabase.from("profiles").insert({
     id: invitedUser.user.id,
     full_name: body.fullName,
+    id_card: body.idCard,
+    phone: body.phone,
     role_id: roleId,
     province_id: provinceId,
     polling_place_id: pollingPlaceId,
@@ -336,6 +583,12 @@ async function createMember(
   });
 
   if (profileError) {
+    console.error("gestionar-personal: falló insert en profiles", {
+      message: profileError.message,
+      code: profileError.code,
+      details: profileError.details,
+      hint: profileError.hint,
+    });
     const { error: cleanupError } = await serviceSupabase.auth.admin.deleteUser(
       invitedUser.user.id,
     );
@@ -354,7 +607,58 @@ async function createMember(
     );
   }
 
-  return jsonResponse({ invited: true }, 201);
+  if (body.electoralTableIds.length > 0) {
+    const assignments = body.electoralTableIds.map((tableId) => ({
+      watcher_id: invitedUser.user.id,
+      electoral_table_id: tableId,
+      assigned_by: userId,
+    }));
+    const { error: assignmentError } = await serviceSupabase
+      .from("watcher_assignments")
+      // No hay tipos generados de la base de datos: sin este cast el cliente
+      // infiere `never[]` y aparece un error nuevo además de los preexistentes.
+      .insert(assignments as unknown as never[]);
+
+    if (assignmentError) {
+      console.error("gestionar-personal: falló insert en watcher_assignments", {
+        message: assignmentError.message,
+        code: assignmentError.code,
+        details: assignmentError.details,
+        hint: assignmentError.hint,
+      });
+      // El perfil y las asignaciones no comparten transacción con Auth: si
+      // falla el último inserto, se intentan ambos borrados compensatorios
+      // (incluso si el primero falla) para no dejar cuenta ni perfil huérfanos.
+      const { error: profileCleanupError } = await serviceSupabase
+        .from("profiles")
+        .delete()
+        .eq("id", invitedUser.user.id);
+      const { error: authCleanupError } =
+        await serviceSupabase.auth.admin.deleteUser(invitedUser.user.id);
+      if (profileCleanupError || authCleanupError) {
+        console.error("gestionar-personal: falló limpieza tras asignaciones", {
+          profileCleanupError,
+          authCleanupError,
+        });
+        return jsonResponse(
+          {
+            error:
+              "No se pudieron guardar las asignaciones ni limpiar la cuenta incompleta. Contacta al administrador antes de reintentar.",
+          },
+          500,
+        );
+      }
+      return jsonResponse(
+        { error: "No se pudieron guardar las asignaciones del veedor." },
+        500,
+      );
+    }
+  }
+
+  return jsonResponse(
+    { invited: true, assignedCount: body.electoralTableIds.length },
+    201,
+  );
 }
 
 async function saveAssignments(
@@ -384,7 +688,11 @@ async function saveAssignments(
     );
   }
 
-  const watcherRoleId = await getRoleId(serviceSupabase, "veedor");
+  const watcherRoleId = await getRoleId(
+    serviceSupabase,
+    "veedor",
+    body.watcherRoleId,
+  );
   if (watcherRoleId === null) {
     return jsonResponse({ error: "No se pudo validar el rol de veedor." }, 500);
   }
@@ -625,10 +933,17 @@ const handler = withSupabase(
   } catch {
     return jsonResponse({ error: "El cuerpo de la solicitud no es válido." }, 400);
   }
-  const body = parseRequestBody(requestValue);
-  if (!body) {
-    return jsonResponse({ error: "Revisa los datos enviados." }, 400);
+  const parsed = parseRequestBody(requestValue);
+  if (isParseFailure(parsed)) {
+    return jsonResponse(
+      {
+        error: parsed.error,
+        ...(parsed.detail ? { detail: parsed.detail } : {}),
+      },
+      400,
+    );
   }
+  const body = parsed.body;
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");

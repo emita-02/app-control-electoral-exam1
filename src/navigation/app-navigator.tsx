@@ -117,7 +117,6 @@ function ObserverHomeScreen({
     <RoleHome
       role={userRoles.observer}
       onOpenActRegistration={() => navigation.navigate('ActRegistration')}
-      onOpenDashboard={() => navigation.navigate('Dashboard')}
       onOpenOfflineHistory={() => navigation.navigate('OfflineHistory')}
     />
   );
@@ -179,7 +178,6 @@ function WorkspaceNavigator() {
             : 'ObserverHome'
       }
       screenOptions={{ headerShown: false, animation: 'fade' }}>
-      <WorkspaceStack.Screen name="Dashboard" component={DashboardScreen} />
       <WorkspaceStack.Screen name="OfflineHistory" component={OfflineHistoryScreen} />
       {role === userRoles.provincialCoordinator ? (
         <>
@@ -195,6 +193,7 @@ function WorkspaceNavigator() {
             name="PersonnelManagement"
             component={PersonnelManagementScreen}
           />
+          <WorkspaceStack.Screen name="Dashboard" component={DashboardScreen} />
         </>
       ) : null}
       {role === userRoles.precinctCoordinator ? (
@@ -211,6 +210,7 @@ function WorkspaceNavigator() {
             name="ActCorrection"
             component={ActCorrectionScreen}
           />
+          <WorkspaceStack.Screen name="Dashboard" component={DashboardScreen} />
         </>
       ) : null}
       {role === userRoles.observer ? (

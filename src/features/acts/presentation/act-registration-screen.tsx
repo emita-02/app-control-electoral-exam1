@@ -336,7 +336,7 @@ export function ActRegistrationScreen({ navigation }: ScreenProps) {
           success={!savedOffline}
           message={
             savedOffline
-              ? `Acta ${savedAct.id} guardada localmente sin conexión. Se sincronizará automáticamente al recuperar señal.`
+              ? `Acta ${savedAct.id} guardada localmente sin conexión. Puedes tomar la foto con GPS ahora; todo se sincronizará al recuperar señal.`
               : `Acta ${savedAct.id} registrada para la mesa ${savedAct.electoralTableId}. Estado: ${savedAct.status}.`
           }
         />
@@ -378,7 +378,7 @@ export function ActRegistrationScreen({ navigation }: ScreenProps) {
     >
       <AuthNotice
         success
-        message="Solo puedes registrar actas de tus mesas asignadas. La suma se verifica automáticamente."
+        message="Solo puedes registrar actas de tus mesas asignadas. La suma se verifica automáticamente y, al guardar, se abre la cámara para tomar la foto con GPS."
       />
 
       {/* Paso 1: Mesa */}
@@ -542,12 +542,22 @@ export function ActRegistrationScreen({ navigation }: ScreenProps) {
 
           <ActValidationFeedback validation={validation} />
           {saveError ? <AuthNotice message={saveError} /> : null}
-          <PrimaryButton
-            label="Guardar y validar acta"
-            loading={saveStatus === "loading"}
-            disabled={!validation.isValid || saveStatus === "loading"}
-            onPress={() => void handleSubmit(submit)()}
-          />
+
+          <View className="gap-3 rounded-2xl border border-electoral-cyan bg-electoral-cyan-light/40 p-4">
+            <Text className="text-base font-extrabold text-electoral-navy">
+              5. Evidencia fotográfica y GPS
+            </Text>
+            <Text className="text-sm leading-5 text-electoral-muted">
+              Al guardar el acta se abre la cámara. La foto se verifica localmente
+              y conserva las coordenadas del lugar donde se tomó, también sin conexión.
+            </Text>
+            <PrimaryButton
+              label="Guardar acta y tomar foto →"
+              loading={saveStatus === "loading"}
+              disabled={!validation.isValid || saveStatus === "loading"}
+              onPress={() => void handleSubmit(submit)()}
+            />
+          </View>
         </View>
       ) : (
         <AuthNotice message="Selecciona una dignidad arriba para desplegar la papeleta de votación." />

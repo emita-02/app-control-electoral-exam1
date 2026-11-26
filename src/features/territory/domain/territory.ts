@@ -37,6 +37,7 @@ export type CreatePollingPlaceInput = {
   code: string | null;
   name: string;
   address: string | null;
+  tableCount: number;
 };
 
 export interface ProvinceTerritoryRepository {

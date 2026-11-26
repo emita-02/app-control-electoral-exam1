@@ -14,6 +14,29 @@ import type {
   ProvinceTerritoryRepository,
 } from '@/features/territory/domain/territory';
 import { supabase } from '@/features/auth/infrastructure/supabase-client';
+import type { ErrorReporter } from '@/features/monitoring/domain/error-reporter';
+
+type PostgrestErrorLike = {
+  message?: string;
+  code?: string;
+  details?: string | null;
+  hint?: string | null;
+};
+
+function readErrorField(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    return '—';
+  }
+  return value.trim().slice(0, 300).replace(/[\r\n]+/g, ' ');
+}
+
+/** Conserva los cuatro campos originales de PostgREST en lugar de ocultarlos. */
+function describePostgrestError(
+  label: string,
+  error: PostgrestErrorLike,
+): string {
+  return `${label} [message=${readErrorField(error.message)}; code=${readErrorField(error.code)}; details=${readErrorField(error.details)}; hint=${readErrorField(error.hint)}]`;
+}
 
 const roleIds = {
   coordinador_recinto: 2,
@@ -24,7 +47,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isResponseLike(value: unknown): value is Pick<Response, 'clone' | 'status'> {
+function isResponseLike(
+  value: unknown,
+): value is Pick<Response, 'clone' | 'status' | 'text'> {
   return (
     isRecord(value) &&
     typeof value.status === 'number' &&
@@ -84,6 +109,8 @@ function mapMember(value: unknown): PersonnelMember {
   return {
     id: readString(record.id),
     fullName: readString(record.full_name),
+    idCard: readNullableString(record.id_card) ?? '',
+    phone: readNullableString(record.phone) ?? '',
     role,
     provinceId: readNullableInteger(record.province_id),
     pollingPlaceId: readNullableInteger(record.polling_place_id),
@@ -125,7 +152,29 @@ function flattenPollingPlaces(cantons: Canton[]): PollingPlace[] {
 }
 
 export class SupabasePersonnelRepository implements PersonnelRepository {
-  constructor(private readonly territoryRepository: ProvinceTerritoryRepository) {}
+  constructor(
+    private readonly territoryRepository: ProvinceTerritoryRepository,
+    private readonly errorReporter?: ErrorReporter,
+  ) {}
+
+  private reportPostgrestError(
+    operation: string,
+    error: PostgrestErrorLike,
+  ): void {
+    void this.errorReporter?.report(error, {
+      screen: 'Gestión de personal',
+      operation,
+      details: {
+        postgrest_message:
+          typeof error.message === 'string' ? error.message.slice(0, 300) : '',
+        postgrest_code: typeof error.code === 'string' ? error.code : '',
+        postgrest_details:
+          typeof error.details === 'string' ? error.details.slice(0, 300) : '',
+        postgrest_hint:
+          typeof error.hint === 'string' ? error.hint.slice(0, 300) : '',
+      },
+    });
+  }
 
   async load(profile: Parameters<PersonnelRepository['load']>[0]): Promise<PersonnelOverview> {
     const emptyOverview: PersonnelOverview = {
@@ -142,13 +191,19 @@ export class SupabasePersonnelRepository implements PersonnelRepository {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, role_id, province_id, polling_place_id, is_active')
+        .select('id, full_name, id_card, phone, role_id, province_id, polling_place_id, is_active')
         .eq('role_id', roleIds.coordinador_recinto)
         .eq('province_id', profile.provinceId)
         .order('full_name');
 
       if (error) {
-        throw new Error('No se pudieron consultar los coordinadores de recinto.');
+        this.reportPostgrestError('load_coordinadores_recinto', error);
+        throw new Error(
+          describePostgrestError(
+            'No se pudieron consultar los coordinadores de recinto.',
+            error,
+          ),
+        );
       }
 
       const province = await this.territoryRepository.findByProvinceId(profile.provinceId);
@@ -166,7 +221,7 @@ export class SupabasePersonnelRepository implements PersonnelRepository {
     const [membersResult, tablesResult, assignmentsResult] = await Promise.all([
       supabase
         .from('profiles')
-        .select('id, full_name, role_id, province_id, polling_place_id, is_active')
+        .select('id, full_name, id_card, phone, role_id, province_id, polling_place_id, is_active')
         .eq('role_id', roleIds.veedor)
         .eq('polling_place_id', profile.pollingPlaceId)
         .order('full_name'),
@@ -184,8 +239,49 @@ export class SupabasePersonnelRepository implements PersonnelRepository {
         .order('assigned_at', { ascending: false }),
     ]);
 
-    if (membersResult.error || tablesResult.error || assignmentsResult.error) {
-      throw new Error('No se pudo consultar el personal y las asignaciones del recinto.');
+    type QueryFailure = {
+      operation: string;
+      label: string;
+      error: PostgrestErrorLike;
+    };
+    const failures: QueryFailure[] = [];
+    if (membersResult.error) {
+      failures.push({
+        operation: 'load_veedores_recinto',
+        label: 'el personal del recinto',
+        error: membersResult.error,
+      });
+    }
+    if (tablesResult.error) {
+      failures.push({
+        operation: 'load_mesas_recinto',
+        label: 'las mesas del recinto',
+        error: tablesResult.error,
+      });
+    }
+    if (assignmentsResult.error) {
+      failures.push({
+        operation: 'load_asignaciones_recinto',
+        label: 'las asignaciones del recinto',
+        error: assignmentsResult.error,
+      });
+    }
+
+    if (failures.length > 0) {
+      for (const failure of failures) {
+        this.reportPostgrestError(failure.operation, failure.error);
+      }
+      const detail = failures
+        .map((failure) =>
+          describePostgrestError(
+            `No se pudo consultar ${failure.label}.`,
+            failure.error,
+          ),
+        )
+        .join(' | ');
+      throw new Error(
+        `No se pudo consultar el personal y las asignaciones del recinto. ${detail}`,
+      );
     }
 
     return {
@@ -210,9 +306,13 @@ export class SupabasePersonnelRepository implements PersonnelRepository {
       body: {
         action: 'create_member',
         role: input.role,
+        roleId: roleIds[input.role],
         fullName: input.fullName,
+        idCard: input.idCard,
+        phone: input.phone,
         email: input.email,
         pollingPlaceId: input.pollingPlaceId ?? null,
+        electoralTableIds: input.electoralTableIds ?? [],
       },
     });
 
@@ -234,6 +334,7 @@ export class SupabasePersonnelRepository implements PersonnelRepository {
       headers: { Authorization: `Bearer ${session.access_token}` },
       body: {
         action: 'save_assignments',
+        watcherRoleId: roleIds.veedor,
         watcherId: input.watcherId,
         electoralTableIds: input.electoralTableIds,
         replacingWatcherId: input.replacingWatcherId ?? null,
@@ -246,43 +347,63 @@ export class SupabasePersonnelRepository implements PersonnelRepository {
     }
   }
 
-  private async getFunctionErrorMessage(error: { context: unknown }): Promise<string> {
-    if (error.context instanceof Response) {
+  private async readFunctionError(
+    error: { name?: string; message?: string; context?: unknown },
+    fallback: string,
+  ): Promise<string> {
+    const context = error.context;
+    if (isResponseLike(context)) {
+      const details: string[] = [];
       try {
-        const body: unknown = await error.context.clone().json();
-        if (isRecord(body) && typeof body.error === 'string') {
-          return body.error;
+        const body: unknown = await context.clone().json();
+        if (isRecord(body)) {
+          for (const key of ['error', 'message', 'detail', 'code'] as const) {
+            const value = body[key];
+            if (typeof value === 'string' && value.trim()) {
+              details.push(value.trim().slice(0, 300));
+            }
+          }
         }
       } catch {
-        return 'No se pudo completar la operación. Verifica tu conexión e inténtalo nuevamente.';
+        try {
+          const text = await context.clone().text();
+          if (text.trim()) {
+            details.push(text.trim().slice(0, 300));
+          }
+        } catch {
+          // Se conserva el HTTP status aunque el cuerpo no se pueda leer.
+        }
       }
+
+      const suffix = details.length > 0 ? `: ${details.join(' | ')}` : '';
+      return `${fallback} (HTTP ${context.status}${suffix}).`;
     }
 
-    return 'No se pudo completar la operación. Verifica tu conexión y tus permisos.';
+    const name = typeof error.name === 'string' ? error.name : 'Error';
+    const message = typeof error.message === 'string' ? error.message.trim() : '';
+    const suffix = message ? `: ${message.slice(0, 300)}` : '';
+    return `${fallback} (${name}${suffix}).`;
   }
 
-  private async getCreateMemberErrorMessage(error: { context: unknown }): Promise<string> {
-    if (!isResponseLike(error.context)) {
-      return 'No se pudo contactar el servicio de creación de personal. Verifica tu conexión.';
-    }
+  private async getFunctionErrorMessage(error: {
+    name?: string;
+    message?: string;
+    context?: unknown;
+  }): Promise<string> {
+    return this.readFunctionError(
+      error,
+      'No se pudo completar la operación. Verifica tu conexión y permisos.',
+    );
+  }
 
-    try {
-      const body: unknown = await error.context.clone().json();
-      if (isRecord(body)) {
-        if (typeof body.error === 'string') {
-          return body.error;
-        }
-        if (body.code === 'EDGE_FUNCTION_ERROR') {
-          return `El servidor de personal respondió con un error interno (HTTP ${error.context.status}; ${body.code}).`;
-        }
-        if (typeof body.message === 'string') {
-          return body.message;
-        }
-      }
-    } catch {
-      return `El servidor de personal respondió con HTTP ${error.context.status}.`;
-    }
-
-    return `El servidor de personal respondió con HTTP ${error.context.status} sin un detalle de error.`;
+  private async getCreateMemberErrorMessage(error: {
+    name?: string;
+    message?: string;
+    context?: unknown;
+  }): Promise<string> {
+    return this.readFunctionError(
+      error,
+      'No se pudo crear la cuenta. Revisa el detalle del servidor.',
+    );
   }
 }

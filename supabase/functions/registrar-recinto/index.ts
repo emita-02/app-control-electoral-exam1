@@ -13,6 +13,7 @@ type CreatePollingPlaceBody = {
   name: string;
   code: string | null;
   address: string | null;
+  tableCount: number;
 };
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -34,7 +35,13 @@ function parseBody(value: unknown): CreatePollingPlaceBody | null {
     return null;
   }
 
-  const allowedFields = new Set(["parishId", "name", "code", "address"]);
+  const allowedFields = new Set([
+    "parishId",
+    "name",
+    "code",
+    "address",
+    "tableCount",
+  ]);
   if (Object.keys(value).some((key) => !allowedFields.has(key))) {
     return null;
   }
@@ -50,7 +57,11 @@ function parseBody(value: unknown): CreatePollingPlaceBody | null {
       typeof value.code !== "string") ||
     (value.address !== undefined &&
       value.address !== null &&
-      typeof value.address !== "string")
+      typeof value.address !== "string") ||
+    typeof value.tableCount !== "number" ||
+    !Number.isSafeInteger(value.tableCount) ||
+    value.tableCount < 1 ||
+    value.tableCount > 100
   ) {
     return null;
   }
@@ -61,7 +72,108 @@ function parseBody(value: unknown): CreatePollingPlaceBody | null {
     code: typeof value.code === "string" ? value.code.trim() || null : null,
     address:
       typeof value.address === "string" ? value.address.trim() || null : null,
+    tableCount: value.tableCount,
   };
+}
+
+type CreatedPollingPlace = {
+  id: number;
+  code: string | null;
+  name: string;
+  address: string | null;
+  electoral_tables: Array<{ id: number; table_number: number }>;
+};
+
+// Contrato de la RPC: { id, code, name, address,
+// electoral_tables: [{ id, table_number }] }. Se reenvía tal cual dentro de
+// { pollingPlace } porque el repositorio lee esos mismos nombres (snake_case).
+function parseRpcResult(
+  value: unknown,
+  expectedTables: number,
+): CreatedPollingPlace | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const { id, code, name, address, electoral_tables: tables } = value;
+  if (
+    typeof id !== "number" ||
+    !Number.isSafeInteger(id) ||
+    id <= 0 ||
+    typeof name !== "string" ||
+    !name.trim() ||
+    (code !== null && typeof code !== "string") ||
+    (address !== null && typeof address !== "string") ||
+    !Array.isArray(tables) ||
+    tables.length !== expectedTables
+  ) {
+    return null;
+  }
+
+  const electoralTables: Array<{ id: number; table_number: number }> = [];
+  for (const item of tables) {
+    if (!isRecord(item)) {
+      return null;
+    }
+    const { id: tableId, table_number: tableNumber } = item;
+    if (
+      typeof tableId !== "number" ||
+      !Number.isSafeInteger(tableId) ||
+      typeof tableNumber !== "number" ||
+      !Number.isSafeInteger(tableNumber)
+    ) {
+      return null;
+    }
+    electoralTables.push({ id: tableId, table_number: tableNumber });
+  }
+
+  const numbers = electoralTables
+    .map((table) => table.table_number)
+    .sort((a, b) => a - b);
+  for (let index = 0; index < expectedTables; index += 1) {
+    if (numbers[index] !== index + 1) {
+      return null;
+    }
+  }
+
+  return {
+    id,
+    code,
+    name: name.trim(),
+    address,
+    electoral_tables: electoralTables,
+  };
+}
+
+// Los mensajes de PostgreSQL pueden contener nombres de tablas, restricciones
+// o fingerprinting interno. Se devuelve un mensaje seguro por SQLSTATE y el
+// error completo queda en los logs del servidor.
+function rpcErrorResponse(code: string | undefined): {
+  error: string;
+  status: number;
+} {
+  switch (code) {
+    case "23505":
+      return {
+        error: "Ya existe un recinto con ese código en la parroquia.",
+        status: 409,
+      };
+    case "42501":
+      return {
+        error: "No tienes permiso para registrar el recinto en esa parroquia.",
+        status: 403,
+      };
+    case "22023":
+      return {
+        error: "Revisa los datos del recinto y la cantidad de mesas (de 1 a 100).",
+        status: 400,
+      };
+    default:
+      return {
+        error: "No se pudo guardar el recinto y sus mesas.",
+        status: 500,
+      };
+  }
 }
 
 const handler = withSupabase(
@@ -93,7 +205,10 @@ const handler = withSupabase(
     const body = parseBody(requestBody);
     if (!body) {
       return jsonResponse(
-        { error: "Revisa los datos del recinto y la parroquia seleccionada." },
+        {
+          error:
+            "Revisa los datos del recinto, la parroquia y la cantidad de mesas (de 1 a 100).",
+        },
         400,
       );
     }
@@ -101,7 +216,14 @@ const handler = withSupabase(
     const { data: activeUser, error: activeError } =
       await ctx.supabase.rpc("is_active_user");
     if (activeError) {
-      return jsonResponse({ error: "No se pudo validar el estado de la cuenta." }, 500);
+      console.error("registrar-recinto: falló is_active_user", activeError);
+      return jsonResponse(
+        {
+          error: "No se pudo validar el estado de la cuenta.",
+          detail: activeError.message ?? "error en RPC is_active_user",
+        },
+        500,
+      );
     }
     if (activeUser !== true) {
       return jsonResponse({ error: "La cuenta no está activa." }, 403);
@@ -110,7 +232,14 @@ const handler = withSupabase(
     const { data: role, error: roleError } =
       await ctx.supabase.rpc("get_my_role");
     if (roleError) {
-      return jsonResponse({ error: "No se pudo validar el rol de la cuenta." }, 500);
+      console.error("registrar-recinto: falló get_my_role", roleError);
+      return jsonResponse(
+        {
+          error: "No se pudo validar el rol de la cuenta.",
+          detail: roleError.message ?? "error en RPC get_my_role",
+        },
+        500,
+      );
     }
     if (
       typeof role !== "string" ||
@@ -129,7 +258,14 @@ const handler = withSupabase(
       .maybeSingle();
 
     if (profileError) {
-      return jsonResponse({ error: "No se pudo validar la jurisdicción." }, 500);
+      console.error("registrar-recinto: falló consulta de profiles", profileError);
+      return jsonResponse(
+        {
+          error: "No se pudo validar la jurisdicción.",
+          detail: profileError.message ?? "error al consultar el perfil",
+        },
+        500,
+      );
     }
     if (
       !profile ||
@@ -167,7 +303,14 @@ const handler = withSupabase(
       .maybeSingle();
 
     if (parishError) {
-      return jsonResponse({ error: "No se pudo validar la parroquia." }, 500);
+      console.error("registrar-recinto: falló consulta de parishes", parishError);
+      return jsonResponse(
+        {
+          error: "No se pudo validar la parroquia.",
+          detail: parishError.message ?? "error al consultar parishes",
+        },
+        500,
+      );
     }
     if (!parish) {
       return jsonResponse({ error: "La parroquia seleccionada no existe." }, 404);
@@ -180,7 +323,18 @@ const handler = withSupabase(
       .maybeSingle();
 
     if (cantonError || !canton) {
-      return jsonResponse({ error: "No se pudo validar la provincia de la parroquia." }, 500);
+      if (cantonError) {
+        console.error("registrar-recinto: falló consulta de cantons", cantonError);
+      }
+      return jsonResponse(
+        {
+          error: "No se pudo validar la provincia de la parroquia.",
+          detail:
+            cantonError?.message ??
+            (canton ? undefined : "no se encontró el cantón de la parroquia"),
+        },
+        500,
+      );
     }
     if (canton.province_id !== profile.province_id) {
       return jsonResponse(
@@ -189,45 +343,39 @@ const handler = withSupabase(
       );
     }
 
-    const { data: pollingPlace, error: insertError } = await serviceSupabase
-      .from("polling_places")
-      .insert({
-        parish_id: body.parishId,
-        name: body.name,
-        code: body.code,
-        address: body.address,
-      })
-      .select("id, code, name, address")
-      .single();
-
-    if (insertError) {
-      if (insertError.code === "23505") {
-        return jsonResponse(
-          { error: "Ya existe un recinto con ese código en la parroquia." },
-          409,
-        );
-      }
-      return jsonResponse({ error: "No se pudo guardar el recinto." }, 500);
-    }
-    if (
-      !pollingPlace ||
-      typeof pollingPlace.id !== "number" ||
-      !Number.isSafeInteger(pollingPlace.id)
-    ) {
-      return jsonResponse({ error: "El servidor no confirmó el recinto registrado." }, 500);
-    }
-
-    return jsonResponse(
+    const { data: created, error: rpcError } = await ctx.supabase.rpc(
+      "registrar_recinto_con_mesas",
       {
-        pollingPlace: {
-          id: pollingPlace.id,
-          code: pollingPlace.code,
-          name: pollingPlace.name,
-          address: pollingPlace.address,
-        },
+        p_parish_id: body.parishId,
+        p_name: body.name,
+        p_code: body.code,
+        p_address: body.address,
+        p_table_count: body.tableCount,
       },
-      201,
     );
+
+    if (rpcError) {
+      const rpcCode =
+        isRecord(rpcError) && typeof rpcError.code === "string"
+          ? rpcError.code
+          : undefined;
+      console.error("registrar-recinto: falló registrar_recinto_con_mesas", {
+        code: rpcCode,
+        error: rpcError,
+      });
+      const { error, status } = rpcErrorResponse(rpcCode);
+      return jsonResponse({ error }, status);
+    }
+
+    const pollingPlace = parseRpcResult(created, body.tableCount);
+    if (!pollingPlace) {
+      return jsonResponse(
+        { error: "El servidor no confirmó el recinto y todas sus mesas." },
+        500,
+      );
+    }
+
+    return jsonResponse({ pollingPlace }, 201);
   },
 );
 

@@ -21,7 +21,12 @@ import type { AuthStackParamList } from '@/navigation/types';
 
 const passwordSchema = z
   .object({
-    password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres.'),
+    password: z
+      .string()
+      .min(8, 'La contraseña debe tener al menos 8 caracteres.')
+      .regex(/[A-Z]/, 'La contraseña debe tener al menos una mayúscula.')
+      .regex(/[a-z]/, 'La contraseña debe tener al menos una minúscula.')
+      .regex(/[0-9]/, 'La contraseña debe tener al menos un número.'),
     confirmation: z.string().min(1, 'Confirma la contraseña.'),
   })
   .refine((values) => values.password === values.confirmation, {
@@ -77,7 +82,7 @@ export default function ResetPasswordScreen() {
       <AuthBrand />
       <AuthHeading
         title="Crear contraseña nueva"
-        description="Elige una contraseña segura de al menos 8 caracteres."
+        description="Elige una contraseña de al menos 8 caracteres con una mayúscula, una minúscula y un número."
       />
       <View className="gap-5">
         {error ? <AuthNotice message={error} /> : null}

@@ -79,7 +79,10 @@ export const store = configureStore({
       thunk: {
         extraArgument: {
           territoryRepository,
-          personnelRepository: new SupabasePersonnelRepository(territoryRepository),
+          personnelRepository: new SupabasePersonnelRepository(
+            territoryRepository,
+            errorReporter,
+          ),
           actOcrRepository,
           electoralActRepository,
           evidenceCaptureDependencies,

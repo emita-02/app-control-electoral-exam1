@@ -17,10 +17,19 @@ export async function createPollingPlace(
     throw new Error('Ingresa el nombre del recinto.');
   }
 
+  if (
+    !Number.isSafeInteger(input.tableCount) ||
+    input.tableCount < 1 ||
+    input.tableCount > 100
+  ) {
+    throw new Error('Ingresa una cantidad de mesas de 1 a 100.');
+  }
+
   return repository.createPollingPlace({
     parishId: input.parishId,
     name,
     code: input.code?.trim() || null,
     address: input.address?.trim() || null,
+    tableCount: input.tableCount,
   });
 }

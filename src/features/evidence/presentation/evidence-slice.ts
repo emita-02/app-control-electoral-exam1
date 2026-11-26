@@ -67,10 +67,14 @@ export const uploadEvidenceForAct = createAsyncThunk<
   UploadEvidenceInput,
   { extra: EvidenceThunkDependencies }
 >('evidence/uploadForAct', async (input, { extra }) => {
-  if (!Number.isSafeInteger(input.actId) || input.actId <= 0) {
+  if (!Number.isSafeInteger(input.actId) || input.actId === 0) {
     throw new Error('La fotografía no tiene un acta válida asociada.');
   }
-  if (!(await extra.networkStatus.isOnline())) {
+  // Un ID negativo identifica un acta local pendiente de sincronización:
+  // se encola aunque la red ya esté disponible para que el worker resuelva
+  // primero el ID remoto del acta (ADR-02).
+  const isLocalAct = input.actId < 0;
+  if (isLocalAct || !(await extra.networkStatus.isOnline())) {
     const localEvidenceId = -Date.now();
     extra.queue.enqueue({
       type: 'upload_evidence',

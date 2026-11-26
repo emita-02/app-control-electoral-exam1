@@ -33,6 +33,14 @@ const pollingPlaceFormSchema = z.object({
   name: z.string().trim().min(1, 'Ingresa el nombre del recinto.'),
   code: z.string(),
   address: z.string(),
+  tableCount: z
+    .string()
+    .trim()
+    .min(1, 'Ingresa la cantidad de mesas electorales.')
+    .regex(/^\d+$/, 'Ingresa un entero positivo, sin decimales ni signos.')
+    .refine((value) => Number(value) >= 1 && Number(value) <= 100, {
+      message: 'Ingresa una cantidad de mesas de 1 a 100.',
+    }),
 });
 
 type PollingPlaceFormValues = z.infer<typeof pollingPlaceFormSchema>;
@@ -192,7 +200,13 @@ export function TerritoryScreen({ navigation }: Props) {
   const { control, handleSubmit, reset, formState } =
     useForm<PollingPlaceFormValues>({
       resolver: zodResolver(pollingPlaceFormSchema),
-      defaultValues: { parishId: 0, name: '', code: '', address: '' },
+      defaultValues: {
+        parishId: 0,
+        name: '',
+        code: '',
+        address: '',
+        tableCount: '',
+      },
     });
   const { createError, createStatus } = useAppSelector((state) => state.territory);
   const parishOptions =
@@ -225,13 +239,17 @@ export function TerritoryScreen({ navigation }: Props) {
     const result = await dispatch(
       registerPollingPlace({
         ...values,
+        tableCount: Number(values.tableCount),
         code: values.code.trim() || null,
         address: values.address.trim() || null,
       }),
     );
 
     if (registerPollingPlace.fulfilled.match(result)) {
-      reset({ parishId: 0, name: '', code: '', address: '' });
+      reset({ parishId: 0, name: '', code: '', address: '', tableCount: '' });
+      if (provinceId !== null) {
+        void dispatch(fetchProvinceTerritory(provinceId));
+      }
     }
   });
 
@@ -325,7 +343,8 @@ export function TerritoryScreen({ navigation }: Props) {
                   Agregar recinto
                 </Text>
                 <Text className="text-sm leading-5 text-electoral-muted">
-                  El recinto se asociará a una parroquia de tu provincia.
+                  El recinto se asociará a una parroquia de tu provincia y se
+                  crearán sus mesas automáticamente.
                 </Text>
               </View>
 
@@ -395,6 +414,25 @@ export function TerritoryScreen({ navigation }: Props) {
                   />
                 )}
               />
+
+              <Controller
+                control={control}
+                name="tableCount"
+                render={({ field, fieldState }) => (
+                  <AuthField
+                    error={fieldState.error?.message}
+                    keyboardType="number-pad"
+                    label="Cantidad de mesas electorales"
+                    onBlur={field.onBlur}
+                    onChangeText={field.onChange}
+                    returnKeyType="next"
+                    value={field.value}
+                  />
+                )}
+              />
+              <Text className="-mt-3 text-xs text-electoral-muted">
+                Cantidad permitida: de 1 a 100 mesas.
+              </Text>
 
               <Controller
                 control={control}

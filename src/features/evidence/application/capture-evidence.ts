@@ -20,7 +20,9 @@ export async function captureEvidence(
   const capturedAtMilliseconds = Date.parse(input.capturedAt);
   if (
     !Number.isSafeInteger(input.actId) ||
-    input.actId <= 0 ||
+    // Los ID negativos son actas guardadas en SQLite sin conexión; el worker
+    // los sustituye por el ID remoto al sincronizar (ADR-02).
+    input.actId === 0 ||
     !input.userId.trim() ||
     !input.localUri.trim() ||
     !Number.isFinite(capturedAtMilliseconds)

@@ -4,6 +4,9 @@ import type { ElectoralTable, PollingPlace } from '@/features/territory/domain/t
 export type PersonnelMember = {
   id: string;
   fullName: string;
+  /** Cédula de identidad del coordinador o veedor. */
+  idCard: string;
+  phone: string;
   role: UserRole;
   provinceId: number | null;
   pollingPlaceId: number | null;
@@ -31,8 +34,12 @@ export type PersonnelOverview = {
 export type CreatePersonnelInput = {
   role: 'coordinador_recinto' | 'veedor';
   fullName: string;
+  idCard: string;
+  phone: string;
   email: string;
   pollingPlaceId?: number;
+  /** Mesas elegidas al crear un veedor; se ignoran para coordinadores de recinto. */
+  electoralTableIds?: number[];
 };
 
 export type SaveWatcherAssignmentsInput = {
